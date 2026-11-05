@@ -1,7 +1,9 @@
 -- 青山國小營隊報名系統 Schema
 -- 敏感資料（密碼、緊急聯絡人電話）僅能透過 SECURITY DEFINER RPC 存取
 
-create extension if not exists pgcrypto;
+-- Supabase 預設把擴充套件放在 extensions schema
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
 
 -- ─── 資料表 ───────────────────────────────────────────────
 
@@ -64,17 +66,25 @@ create table if not exists camp_system_settings (
 -- ─── 密碼工具 ─────────────────────────────────────────────
 
 create or replace function camp_hash_password(p_plain text)
-returns text language sql volatile as $$
-  select crypt(p_plain, gen_salt('bf'))
+returns text
+language sql
+volatile
+set search_path = public, extensions
+as $$
+  select extensions.crypt(p_plain, extensions.gen_salt('bf'))
 $$;
 
 create or replace function camp_password_matches(p_plain text, p_hash text)
-returns boolean language sql immutable as $$
-  select coalesce(p_hash = crypt(p_plain, p_hash), false)
+returns boolean
+language sql
+immutable
+set search_path = public, extensions
+as $$
+  select coalesce(p_hash = extensions.crypt(p_plain, p_hash), false)
 $$;
 
 create or replace function camp_assert_admin(p_admin_password text)
-returns void language plpgsql security definer set search_path = public as $$
+returns void language plpgsql security definer set search_path = public, extensions as $$
 declare
   h text;
 begin
@@ -87,7 +97,7 @@ end $$;
 -- ─── 公開設定（不含任何密碼欄位）──────────────────────────
 
 create or replace function camp_get_public_settings()
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare
   r camp_system_settings%rowtype;
 begin
@@ -111,7 +121,7 @@ end $$;
 -- ─── 學生登入驗證（僅回傳該生 emergency_contacts）──────────
 
 create or replace function camp_verify_student_login(p_student_id text, p_password text)
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare
   r camp_student_profiles%rowtype;
   ok boolean;
@@ -198,7 +208,7 @@ create or replace function camp_update_student_profile(
   p_new_password text default null,
   p_emergency_contacts jsonb default null
 )
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare
   r camp_student_profiles%rowtype;
   login jsonb;
@@ -233,7 +243,7 @@ end $$;
 -- ─── 後台驗證 + 取回全校聯絡人（不含密碼雜湊）────────────
 
 create or replace function camp_verify_admin_and_fetch_all(p_admin_password text)
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare
   settings jsonb;
   profiles jsonb;
@@ -259,7 +269,7 @@ end $$;
 -- ─── 後台：解鎖／重設密碼／代編聯絡人／存設定／營隊 ───────
 
 create or replace function camp_admin_unlock_student(p_admin_password text, p_student_id text)
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 begin
   perform camp_assert_admin(p_admin_password);
   insert into camp_student_profiles (student_id, password_hash, failed_attempts, is_locked, emergency_contacts)
@@ -270,7 +280,7 @@ begin
 end $$;
 
 create or replace function camp_admin_reset_student_password(p_admin_password text, p_student_id text)
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 begin
   perform camp_assert_admin(p_admin_password);
   insert into camp_student_profiles (student_id, password_hash, failed_attempts, is_locked, emergency_contacts)
@@ -288,7 +298,7 @@ create or replace function camp_admin_set_contacts(
   p_student_id text,
   p_emergency_contacts jsonb
 )
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 begin
   perform camp_assert_admin(p_admin_password);
   insert into camp_student_profiles (student_id, password_hash, failed_attempts, is_locked, emergency_contacts)
@@ -305,7 +315,7 @@ create or replace function camp_admin_save_settings(
   p_registration_end_at timestamptz,
   p_new_admin_password text default null
 )
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 begin
   perform camp_assert_admin(p_admin_password);
   update camp_system_settings set
@@ -323,7 +333,7 @@ begin
 end $$;
 
 create or replace function camp_admin_save_camp(p_admin_password text, p_camp jsonb)
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare
   cid text;
 begin
@@ -338,7 +348,7 @@ begin
 end $$;
 
 create or replace function camp_admin_delete_camp(p_admin_password text, p_camp_id text)
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 begin
   perform camp_assert_admin(p_admin_password);
   delete from camp_camps where id = p_camp_id;
@@ -350,7 +360,7 @@ end $$;
 insert into camp_system_settings (id, admin_password_hash, registration_start_at, registration_end_at, term_name)
 values (
   'default',
-  crypt('2026', gen_salt('bf')),
+  extensions.crypt('2026', extensions.gen_salt('bf')),
   '2026-01-01 00:00:00+08',
   '2026-12-31 23:59:00+08',
   '115學年度夏令營'

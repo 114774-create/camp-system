@@ -4,7 +4,7 @@ import { hasValidEmergencyContacts, emptyProfileView } from './auth'
 import { canRequestLeave, validateRegistration } from './validate'
 import { Camp, PublicSettings, Student } from '../types'
 import { sha256Hex, LOCAL_ADMIN_PASSWORD_SHA256 } from './localCrypto'
-import { getRepo } from '../data/repo'
+import { __localRepo } from '../data/repo'
 
 const mk = (o: Partial<Camp>): Camp => ({
   id: 'x', term: 'T', season: 'summer', name: 'X', attendance_mode: 'full_course',
@@ -97,7 +97,7 @@ describe('localRepo RPC simulation', () => {
   })
 
   it('學生登入錯誤 5 次鎖定，且成功時只回傳該生聯絡人', async () => {
-    const repo = getRepo()
+    const repo = __localRepo
     const id = '10101'
     for (let i = 0; i < 4; i++) {
       const r = await repo.verifyStudentLogin(id, 'wrong')
@@ -119,7 +119,7 @@ describe('localRepo RPC simulation', () => {
   })
 
   it('後台驗證成功才取得全校 profiles，公開設定不含密碼欄位', async () => {
-    const repo = getRepo()
+    const repo = __localRepo
     const adminPwd = String.fromCharCode(50, 48, 50, 54)
     const pub = await repo.getPublicSettings()
     expect(pub).not.toHaveProperty('admin_password')

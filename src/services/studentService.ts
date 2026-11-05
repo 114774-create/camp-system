@@ -77,17 +77,41 @@ function parseCsv(text: string): Record<string, string>[] {
   })
 }
 
+function looksLikeHtml(text: string): boolean {
+  const t = text.trim().slice(0, 32).toLowerCase()
+  return t.startsWith('<!doctype') || t.startsWith('<html')
+}
+
 async function fetchFromApiUrl(url: string): Promise<Student[]> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`sheet_api_http_${res.status}`)
-  const ct = res.headers.get('content-type') ?? ''
+  const res = await fetch(url, {
+    redirect: 'follow',
+    headers: { Accept: 'application/json, text/plain, */*' },
+  })
   const text = await res.text()
+
+  if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(
+        `Apps Script 拒絕存取 (HTTP ${res.status})。請在「部署 → 管理部署」將執行身分設為「我」、存取權設為「任何人」，並使用 /exec 網址。`,
+      )
+    }
+    throw new Error(`sheet_api_http_${res.status}`)
+  }
+
+  if (looksLikeHtml(text)) {
+    throw new Error(
+      'Apps Script 回傳 HTML 而非 JSON（多半是部署權限或網址錯誤）。請確認使用 /exec 且「任何人」可存取。',
+    )
+  }
+
+  const ct = res.headers.get('content-type') ?? ''
   let raw: unknown
   if (ct.includes('json') || text.trim().startsWith('[') || text.trim().startsWith('{')) {
     raw = JSON.parse(text)
   } else {
     raw = parseCsv(text)
   }
+
   const arr = Array.isArray(raw) ? raw : (raw as any)?.data ?? (raw as any)?.students ?? []
   if (!Array.isArray(arr)) throw new Error('sheet_api_not_array')
   const list = arr.map((r: any) => norm(r)).filter(Boolean) as Student[]
@@ -99,8 +123,10 @@ async function fetchFromGoogleSheet(urlOrId: string): Promise<Student[]> {
   const csvUrl = toGvizCsvUrl(urlOrId)
   if (!csvUrl) throw new Error('invalid_sheet_url')
   const res = await fetch(csvUrl)
+  const text = await res.text()
   if (!res.ok) throw new Error(`gviz_http_${res.status}`)
-  const list = parseCsv(await res.text()).map(norm).filter(Boolean) as Student[]
+  if (looksLikeHtml(text)) throw new Error('gviz_returned_html_check_sheet_sharing')
+  const list = parseCsv(text).map(norm).filter(Boolean) as Student[]
   if (!list.length) throw new Error('empty')
   return sort(list)
 }

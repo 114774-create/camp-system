@@ -433,8 +433,14 @@ function createSupaRepo(sb: SupabaseClient): Repo {
   }
 }
 
-const url = import.meta.env.VITE_SUPABASE_URL
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY
-const sb = url && key ? createClient(url, key) : null
+/** 單元測試強制本機 RPC 模擬，避免誤打正式 Supabase */
+export function getRepo(): Repo {
+  if (import.meta.env.MODE === 'test' || import.meta.env.VITEST) return localRepo
+  const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim()
+  const key = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim()
+  if (url && key) return createSupaRepo(createClient(url, key))
+  return localRepo
+}
 
-export const getRepo = (): Repo => (sb ? createSupaRepo(sb) : localRepo)
+/** @internal 測試用 */
+export const __localRepo = localRepo
