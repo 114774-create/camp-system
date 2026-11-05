@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Plus, Save, Trash2 } from 'lucide-react'
-import { EmergencyContact, Student, StudentProfile } from '../../types'
+import { EmergencyContact, Student, StudentLoginResult, StudentProfileView } from '../../types'
 import { useI18n } from '../../lib/I18nContext'
 import { displayStudentName } from '../../lib/maskName'
 
@@ -9,19 +9,25 @@ const blank = (): EmergencyContact => ({ name: '', relation: '', phone: '', is_p
 export default function ContactsPage({
   student,
   profile,
+  sessionPassword,
   onSave,
 }: {
   student: Student
-  profile: StudentProfile
-  onSave: (contacts: EmergencyContact[]) => Promise<void>
+  profile: StudentProfileView
+  sessionPassword: string
+  onSave: (contacts: EmergencyContact[], currentPassword: string) => Promise<StudentLoginResult>
 }) {
   const { t, locale } = useI18n()
   const [list, setList] = useState<EmergencyContact[]>(profile.emergency_contacts.length ? profile.emergency_contacts : [blank()])
+  const [pwd, setPwd] = useState(sessionPassword)
   const [msg, setMsg] = useState('')
+  const [ok, setOk] = useState(false)
 
   useEffect(() => {
     setList(profile.emergency_contacts.length ? profile.emergency_contacts : [blank()])
   }, [profile.student_id, profile.emergency_contacts])
+
+  useEffect(() => { setPwd(sessionPassword) }, [sessionPassword])
 
   const setAt = (i: number, patch: Partial<EmergencyContact>) => {
     setList(prev => prev.map((c, idx) => {
@@ -77,6 +83,11 @@ export default function ContactsPage({
         </div>
       ))}
 
+      <label className="grid gap-1 text-sm font-medium max-w-md">
+        {locale === 'en' ? 'Confirm with student password' : '請輸入學生密碼以儲存（伺服器端驗證）'}
+        <input type="password" className="input-field" value={pwd} onChange={e => setPwd(e.target.value)} autoComplete="current-password" />
+      </label>
+
       <div className="flex flex-wrap gap-2">
         <button type="button" className="btn-ghost" onClick={() => setList(prev => [...prev, blank()])}>
           <Plus className="h-4 w-4" />
@@ -85,22 +96,25 @@ export default function ContactsPage({
         <button
           type="button"
           className="btn-primary"
+          disabled={!pwd}
           onClick={async () => {
             const cleaned = list.filter(c => c.name.trim() || c.phone.trim() || c.relation.trim())
             if (!cleaned.some(c => c.name.trim() && c.phone.trim())) {
+              setOk(false)
               setMsg(t('contact.hint'))
               return
             }
             if (!cleaned.some(c => c.is_primary)) cleaned[0].is_primary = true
-            await onSave(cleaned)
-            setMsg(t('contact.saved'))
+            const r = await onSave(cleaned, pwd)
+            setOk(r.success)
+            setMsg(r.success ? t('contact.saved') : ('message' in r ? r.message : t('admin.wrong')))
           }}
         >
           <Save className="h-4 w-4" />
           {t('contact.save')}
         </button>
       </div>
-      {msg && <p role="alert" className="text-sm text-emerald-700">{msg}</p>}
+      {msg && <p role="alert" className={`text-sm ${ok ? 'text-emerald-700' : 'text-rose-600'}`}>{msg}</p>}
     </div>
   )
 }

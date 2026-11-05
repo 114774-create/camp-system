@@ -1,4 +1,4 @@
-import { Camp, Registration, Student, StudentProfile, SystemSettings } from '../types'
+import { Camp, Registration, Student, StudentProfileView, PublicSettings } from '../types'
 import { hasValidEmergencyContacts } from './auth'
 import { formatTaipei, nowInTaipei, registrationWindowStatus } from './time'
 
@@ -16,7 +16,7 @@ export function validateRegistration(
   targetDate: string,
   existingRegistrations: Registration[],
   allCamps: Camp[],
-  opts?: { profile?: StudentProfile | null; settings?: SystemSettings | null; now?: Date },
+  opts?: { profile?: StudentProfileView | null; settings?: PublicSettings | null; now?: Date },
 ): VResult {
   const fail = (code: 'GRADE' | 'FULL' | 'CONFLICT' | 'GROUP' | 'DUP' | 'CONTACT' | 'WINDOW' | 'LOCKED', message: string): VResult =>
     ({ ok: false, code, message })
@@ -73,7 +73,7 @@ export function canRequestLeave(camp: Camp): boolean {
   return attendingDays(camp) >= 2
 }
 
-export function canCancelOrEnroll(settings?: SystemSettings | null, now = nowInTaipei()): boolean {
+export function canCancelOrEnroll(settings?: PublicSettings | null, now = nowInTaipei()): boolean {
   const win = registrationWindowStatus(settings?.registration_start_at, settings?.registration_end_at, now)
   return win.status === 'open' || win.status === 'unset'
 }

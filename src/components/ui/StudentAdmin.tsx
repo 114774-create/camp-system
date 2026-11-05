@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { KeyRound, LockOpen, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react'
-import { EmergencyContact, Student, StudentProfile } from '../../types'
+import { EmergencyContact, Student, StudentProfileView } from '../../types'
 import { useI18n } from '../../lib/I18nContext'
 import { displayStudentName } from '../../lib/maskName'
 import { clsName } from '../../lib/report'
@@ -16,8 +16,8 @@ export default function StudentAdmin({
   onSaveContacts,
 }: {
   students: Student[]
-  profiles: StudentProfile[]
-  getProfile: (id: string) => StudentProfile
+  profiles: StudentProfileView[]
+  getProfile: (id: string) => StudentProfileView
   onUnlock: (id: string) => Promise<void>
   onResetPassword: (id: string) => Promise<void>
   onSaveContacts: (id: string, contacts: EmergencyContact[]) => Promise<void>

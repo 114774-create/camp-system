@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Camp, EmergencyContact, Registration, Student, StudentProfile, SystemSettings } from '../types'
-import { ensureProfile, getRepo } from '../data/repo'
+import {
+  Camp, EmergencyContact, PublicSettings, Registration, Student, StudentProfileView,
+} from '../types'
+import { getRepo } from '../data/repo'
 import { loadStudents } from '../services/studentService'
 import { validateRegistration, VResult, canCancelOrEnroll, canRequestLeave } from '../lib/validate'
 import { autoAssign } from '../lib/assign'
-import { attemptStudentLogin, unlockAndResetPassword } from '../lib/auth'
+import { emptyProfileView, readAdminToken } from '../lib/auth'
 
 const repo = getRepo()
 
@@ -12,60 +14,121 @@ export function useCampData() {
   const [students, setStudents] = useState<Student[]>([])
   const [camps, setCamps] = useState<Camp[]>([])
   const [regs, setRegs] = useState<Registration[]>([])
-  const [profiles, setProfiles] = useState<StudentProfile[]>([])
-  const [settings, setSettings] = useState<SystemSettings | null>(null)
+  /** 僅登入學生自己的個資，或後台驗證後的全校清單（皆不含密碼） */
+  const [profiles, setProfiles] = useState<StudentProfileView[]>([])
+  const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const reload = useCallback(async () => {
-    const [s, c, r, p, st] = await Promise.all([
+  const reloadPublic = useCallback(async () => {
+    const [s, c, r, st] = await Promise.all([
       loadStudents(),
       repo.listCamps(),
       repo.listRegs(),
-      repo.listProfiles(),
-      repo.getSettings(),
+      repo.getPublicSettings(),
     ])
     setStudents(s)
     setCamps(c)
     setRegs(r)
-    setProfiles(p)
     setSettings(st)
     setLoading(false)
   }, [])
 
-  useEffect(() => { reload() }, [reload])
+  useEffect(() => { reloadPublic() }, [reloadPublic])
 
-  const getProfile = (studentId: string) => ensureProfile(profiles, studentId)
+  const getProfile = (studentId: string): StudentProfileView =>
+    profiles.find(p => p.student_id === studentId) ?? emptyProfileView(studentId)
 
-  const persistProfile = async (p: StudentProfile) => {
-    await repo.saveProfile(p)
-    setProfiles(prev => prev.some(x => x.student_id === p.student_id)
-      ? prev.map(x => x.student_id === p.student_id ? p : x)
-      : [...prev, p])
+  const upsertLocalProfile = (view: StudentProfileView) => {
+    setProfiles(prev => prev.some(x => x.student_id === view.student_id)
+      ? prev.map(x => x.student_id === view.student_id ? view : x)
+      : [...prev, view])
+  }
+
+  const requireAdminPassword = () => {
+    const pwd = readAdminToken()
+    if (!pwd) throw new Error('ADMIN_AUTH_FAILED')
+    return pwd
   }
 
   const loginStudent = async (studentId: string, password: string) => {
-    const current = getProfile(studentId)
-    const { result, profile } = attemptStudentLogin(current, password)
-    await persistProfile(profile)
+    const result = await repo.verifyStudentLogin(studentId, password)
+    if (result.success) {
+      upsertLocalProfile({
+        student_id: studentId,
+        failed_attempts: 0,
+        is_locked: false,
+        emergency_contacts: result.emergency_contacts,
+      })
+      return { ok: true as const }
+    }
+    if (result.is_locked) {
+      upsertLocalProfile({
+        student_id: studentId,
+        failed_attempts: 5,
+        is_locked: true,
+        emergency_contacts: getProfile(studentId).emergency_contacts,
+      })
+    }
+    return {
+      ok: false as const,
+      locked: result.is_locked,
+      attempts: 5 - result.remaining_attempts,
+      message: result.message,
+    }
+  }
+
+  const changeStudentPassword = async (studentId: string, currentPassword: string, nextPassword: string) => {
+    const result = await repo.updateStudentProfile(studentId, currentPassword, nextPassword, null)
+    if (!result.success) return result
+    upsertLocalProfile({
+      student_id: studentId,
+      failed_attempts: 0,
+      is_locked: false,
+      emergency_contacts: result.emergency_contacts,
+    })
     return result
   }
 
-  const changeStudentPassword = async (studentId: string, nextPassword: string) => {
-    const p = { ...getProfile(studentId), password_hash: nextPassword, failed_attempts: 0 }
-    await persistProfile(p)
+  const saveEmergencyContacts = async (studentId: string, currentPassword: string, contacts: EmergencyContact[]) => {
+    const result = await repo.updateStudentProfile(studentId, currentPassword, null, contacts)
+    if (!result.success) return result
+    upsertLocalProfile({
+      student_id: studentId,
+      failed_attempts: 0,
+      is_locked: false,
+      emergency_contacts: result.emergency_contacts,
+    })
+    return result
   }
 
-  const saveEmergencyContacts = async (studentId: string, contacts: EmergencyContact[]) => {
-    const p = { ...getProfile(studentId), emergency_contacts: contacts }
-    await persistProfile(p)
+  const verifyAdmin = async (adminPassword: string) => {
+    const bundle = await repo.verifyAdminAndFetchAll(adminPassword)
+    setProfiles(bundle.profiles)
+    setSettings(bundle.settings)
+    return bundle
+  }
+
+  const refreshAdminProfiles = async () => {
+    const pwd = requireAdminPassword()
+    const bundle = await repo.verifyAdminAndFetchAll(pwd)
+    setProfiles(bundle.profiles)
+    setSettings(bundle.settings)
+    return bundle
   }
 
   const unlockStudent = async (studentId: string) => {
-    await persistProfile(unlockAndResetPassword(getProfile(studentId)))
+    await repo.adminUnlockStudent(requireAdminPassword(), studentId)
+    await refreshAdminProfiles()
   }
 
   const resetStudentPassword = async (studentId: string) => {
-    await persistProfile(unlockAndResetPassword(getProfile(studentId)))
+    await repo.adminResetStudentPassword(requireAdminPassword(), studentId)
+    await refreshAdminProfiles()
+  }
+
+  const adminSaveContacts = async (studentId: string, contacts: EmergencyContact[]) => {
+    await repo.adminSetContacts(requireAdminPassword(), studentId, contacts)
+    await refreshAdminProfiles()
   }
 
   const enroll = async (student: Student, camp: Camp): Promise<VResult> => {
@@ -83,7 +146,7 @@ export function useCampData() {
     try {
       await repo.upsertRegs([r])
     } catch {
-      await reload()
+      await reloadPublic()
       return { ok: false, code: 'FULL', message: '報名失敗，名額可能剛被報滿，請重新確認' }
     }
     setRegs(p => [...p, r])
@@ -136,26 +199,42 @@ export function useCampData() {
   }
 
   const saveCamp = async (c: Camp) => {
-    await repo.saveCamp(c)
+    await repo.adminSaveCamp(requireAdminPassword(), c)
     setCamps(p => p.some(x => x.id === c.id) ? p.map(x => x.id === c.id ? c : x) : [...p, c])
   }
 
   const deleteCamp = async (id: string) => {
-    await repo.deleteCamp(id)
+    await repo.adminDeleteCamp(requireAdminPassword(), id)
     setCamps(p => p.filter(x => x.id !== id))
     setRegs(p => p.filter(r => r.camp_id !== id))
   }
 
-  const saveSettings = async (s: SystemSettings) => {
-    await repo.saveSettings(s)
-    setSettings(s)
+  const saveSettings = async (
+    s: PublicSettings,
+    newAdminPassword?: string,
+  ) => {
+    const next = await repo.adminSaveSettings(requireAdminPassword(), {
+      term_name: s.term_name,
+      registration_start_at: s.registration_start_at,
+      registration_end_at: s.registration_end_at,
+      new_admin_password: newAdminPassword,
+    })
+    setSettings(next)
+  }
+
+  const clearStudentPii = (studentId?: string | null) => {
+    if (!studentId) {
+      setProfiles([])
+      return
+    }
+    setProfiles(prev => prev.filter(p => p.student_id !== studentId))
   }
 
   return {
     students, camps, regs, profiles, settings, loading,
     getProfile, loginStudent, changeStudentPassword, saveEmergencyContacts,
-    unlockStudent, resetStudentPassword,
+    verifyAdmin, unlockStudent, resetStudentPassword, adminSaveContacts,
     enroll, cancel, requestLeave, setSubClass, autoAssign: runAutoAssign,
-    saveCamp, deleteCamp, saveSettings, reload,
+    saveCamp, deleteCamp, saveSettings, reloadPublic, clearStudentPii, refreshAdminProfiles,
   }
 }

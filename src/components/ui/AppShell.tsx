@@ -3,7 +3,7 @@ import { Compass, Globe2, Lock, LogOut, Printer, Settings2, Sun, Tent, UserRound
 import { Tab } from '../../types'
 import { useI18n } from '../../lib/I18nContext'
 import { formatTaipei, registrationWindowStatus } from '../../lib/time'
-import { SystemSettings } from '../../types'
+import { PublicSettings } from '../../types'
 
 const STUDENT_TABS: Tab[] = ['front', 'contacts']
 const ADMIN_TABS: Tab[] = ['camps', 'students', 'settings', 'r1', 'r2', 'r3']
@@ -14,7 +14,7 @@ export default function AppShell({
   tab: Tab
   onTab: (t: Tab) => void
   children: ReactNode
-  settings?: SystemSettings | null
+  settings?: PublicSettings | null
   isAdminAuthenticated: boolean
   onAdminLogout: () => void
   studentLoggedIn: boolean

@@ -1,4 +1,5 @@
-import { Camp, SystemSettings } from '../types'
+import { Camp, PublicSettings } from '../types'
+import { LOCAL_ADMIN_PASSWORD_SHA256 } from '../lib/localCrypto'
 
 const base = {
   term: '115學年度夏令營',
@@ -52,10 +53,22 @@ export const SEED: Camp[] = [
   })),
 ]
 
-export const DEFAULT_SETTINGS: SystemSettings = {
+export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
   id: 'default',
-  admin_password: '2026',
   registration_start_at: '2025-12-01T00:00:00.000Z',
   registration_end_at: '2026-12-31T15:59:00.000Z',
   term_name: '115學年度夏令營',
 }
+
+/** 本機 localStorage 內部用（含雜湊，絕不當 API 回傳） */
+export interface LocalSettingsStore extends PublicSettings {
+  admin_password_hash: string
+}
+
+export const DEFAULT_LOCAL_SETTINGS_STORE: LocalSettingsStore = {
+  ...DEFAULT_PUBLIC_SETTINGS,
+  admin_password_hash: LOCAL_ADMIN_PASSWORD_SHA256,
+}
+
+/** @deprecated */
+export const DEFAULT_SETTINGS = DEFAULT_PUBLIC_SETTINGS

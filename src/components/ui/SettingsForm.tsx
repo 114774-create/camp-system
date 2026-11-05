@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Save } from 'lucide-react'
-import { SystemSettings } from '../../types'
+import { PublicSettings } from '../../types'
 import { fromDatetimeLocalValue, toDatetimeLocalValue } from '../../lib/time'
 import { useI18n } from '../../lib/I18nContext'
 
@@ -8,11 +8,12 @@ export default function SettingsForm({
   settings,
   onSave,
 }: {
-  settings: SystemSettings
-  onSave: (s: SystemSettings) => Promise<void>
+  settings: PublicSettings
+  onSave: (s: PublicSettings, newAdminPassword?: string) => Promise<void>
 }) {
   const { locale } = useI18n()
   const [s, setS] = useState(settings)
+  const [newAdminPwd, setNewAdminPwd] = useState('')
   const [msg, setMsg] = useState('')
 
   return (
@@ -21,8 +22,8 @@ export default function SettingsForm({
         <h2 className="section-title">{locale === 'en' ? 'System settings' : '系統設定'}</h2>
         <p className="mt-1 text-sm text-slate-500">
           {locale === 'en'
-            ? 'Admin password & registration window (Taiwan Standard Time, Asia/Taipei).'
-            : '後台密碼與報名開放／截止時間（台灣標準時間 Asia/Taipei）。'}
+            ? 'Registration window (Taiwan Standard Time). Admin password is never shown; enter a new one only when rotating.'
+            : '報名開放／截止（台灣標準時間）。後台密碼不會顯示於畫面；僅在要更換時填寫新密碼。'}
         </p>
       </div>
 
@@ -32,8 +33,15 @@ export default function SettingsForm({
           <input className="input-field" value={s.term_name} onChange={e => setS({ ...s, term_name: e.target.value })} />
         </label>
         <label className="grid gap-1 text-sm font-medium">
-          {locale === 'en' ? 'Admin password' : '後台密碼'}
-          <input className="input-field" type="text" value={s.admin_password} onChange={e => setS({ ...s, admin_password: e.target.value })} />
+          {locale === 'en' ? 'New admin password (optional)' : '新後台密碼（選填，留空則不變更）'}
+          <input
+            className="input-field"
+            type="password"
+            value={newAdminPwd}
+            onChange={e => setNewAdminPwd(e.target.value)}
+            autoComplete="new-password"
+            placeholder={locale === 'en' ? 'Leave blank to keep current' : '留空＝維持原密碼'}
+          />
         </label>
         <label className="grid gap-1 text-sm font-medium">
           {locale === 'en' ? 'Registration opens (TST)' : '報名開放時間（台灣時間）'}
@@ -57,7 +65,8 @@ export default function SettingsForm({
           type="button"
           className="btn-primary justify-self-start"
           onClick={async () => {
-            await onSave(s)
+            await onSave(s, newAdminPwd.trim() || undefined)
+            setNewAdminPwd('')
             setMsg(locale === 'en' ? 'Settings saved' : '設定已儲存')
           }}
         >

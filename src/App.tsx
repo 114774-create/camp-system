@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Camp, Tab } from './types'
 import { useCampData } from './hooks/useCampData'
 import { I18nProvider, useI18n } from './lib/I18nContext'
@@ -16,7 +16,6 @@ import R2Master from './components/reports/R2Master'
 import R3Notice from './components/reports/R3Notice'
 
 const ADMIN_TABS: Tab[] = ['camps', 'students', 'settings', 'r1', 'r2', 'r3']
-const STUDENT_SESSION_KEY = 'camp_student_auth'
 
 function AppInner() {
   const d = useCampData()
@@ -24,16 +23,9 @@ function AppInner() {
   const [tab, setTab] = useState<Tab>('front')
   const [editing, setEditing] = useState<Camp | null | 'new'>(null)
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => readAdminSession())
-  const [loggedInStudentId, setLoggedInStudentId] = useState<string | null>(() => {
-    try { return sessionStorage.getItem(STUDENT_SESSION_KEY) } catch { return null }
-  })
-
-  useEffect(() => {
-    try {
-      if (loggedInStudentId) sessionStorage.setItem(STUDENT_SESSION_KEY, loggedInStudentId)
-      else sessionStorage.removeItem(STUDENT_SESSION_KEY)
-    } catch { /* ignore */ }
-  }, [loggedInStudentId])
+  // 學生登入狀態僅存在記憶體：重整後必須重新輸入密碼，避免個資殘留
+  const [loggedInStudentId, setLoggedInStudentId] = useState<string | null>(null)
+  const [studentSessionPassword, setStudentSessionPassword] = useState('')
 
   const requestTab = (next: Tab) => {
     setTab(next)
@@ -42,7 +34,6 @@ function AppInner() {
 
   const needsAdmin = ADMIN_TABS.includes(tab)
   const showAdminGate = needsAdmin && !isAdminAuthenticated
-
   const rp = { students: d.students, camps: d.camps, regs: d.regs, profiles: d.profiles }
 
   if (d.loading) return <p className="p-4">{t('loading')}</p>
@@ -53,13 +44,21 @@ function AppInner() {
       onTab={requestTab}
       settings={d.settings}
       isAdminAuthenticated={isAdminAuthenticated}
-      onAdminLogout={() => { writeAdminSession(false); setIsAdminAuthenticated(false); setTab('front') }}
+      onAdminLogout={() => {
+        writeAdminSession(false)
+        setIsAdminAuthenticated(false)
+        d.clearStudentPii()
+        setTab('front')
+      }}
       studentLoggedIn={!!loggedInStudentId}
     >
-      {showAdminGate && d.settings && (
+      {showAdminGate && (
         <AdminGate
-          expectedPassword={d.settings.admin_password}
-          onSuccess={() => { writeAdminSession(true); setIsAdminAuthenticated(true) }}
+          onVerify={async (password) => {
+            await d.verifyAdmin(password)
+            writeAdminSession(true, password)
+            setIsAdminAuthenticated(true)
+          }}
         />
       )}
 
@@ -71,11 +70,23 @@ function AppInner() {
           getProfile={d.getProfile}
           onLogin={async (id, password) => {
             const r = await d.loginStudent(id, password)
-            if (r.ok) { setLoggedInStudentId(id); return { ok: true as const } }
+            if (r.ok) {
+              setLoggedInStudentId(id)
+              setStudentSessionPassword(password)
+              return { ok: true as const }
+            }
             return { ok: false as const, message: r.message, locked: r.locked }
           }}
-          onLogout={() => setLoggedInStudentId(null)}
-          onChangePassword={d.changeStudentPassword}
+          onLogout={() => {
+            d.clearStudentPii(loggedInStudentId)
+            setLoggedInStudentId(null)
+            setStudentSessionPassword('')
+          }}
+          onChangePassword={async (studentId, currentPassword, next) => {
+            const r = await d.changeStudentPassword(studentId, currentPassword, next)
+            if (r.success) setStudentSessionPassword(next)
+            return r
+          }}
           onEnroll={d.enroll}
           onCancel={d.cancel}
           onLeave={d.requestLeave}
@@ -89,7 +100,12 @@ function AppInner() {
           <ContactsPage
             student={stu}
             profile={d.getProfile(loggedInStudentId)}
-            onSave={contacts => d.saveEmergencyContacts(loggedInStudentId, contacts)}
+            sessionPassword={studentSessionPassword}
+            onSave={async (contacts, currentPassword) => {
+              const r = await d.saveEmergencyContacts(loggedInStudentId, currentPassword, contacts)
+              if (r.success) setStudentSessionPassword(currentPassword)
+              return r
+            }}
           />
         )
       })()}
@@ -120,7 +136,7 @@ function AppInner() {
           getProfile={d.getProfile}
           onUnlock={d.unlockStudent}
           onResetPassword={d.resetStudentPassword}
-          onSaveContacts={d.saveEmergencyContacts}
+          onSaveContacts={d.adminSaveContacts}
         />
       )}
 

@@ -3,7 +3,7 @@ import {
   AlertCircle, CalendarDays, CheckCircle2, Clock, IdCard, KeyRound,
   LogOut, MapPin, Sparkles, Ticket, UserRound, XCircle,
 } from 'lucide-react'
-import { Camp, Registration, Student, StudentProfile, SystemSettings } from '../../types'
+import { Camp, Registration, Student, StudentLoginResult, StudentProfileView, PublicSettings } from '../../types'
 import { buttonState, canCancelOrEnroll, canRequestLeave, md, validateRegistration, VResult } from '../../lib/validate'
 import { campLabel, clsName } from '../../lib/report'
 import { displayStudentName } from '../../lib/maskName'
@@ -13,13 +13,13 @@ export interface FrontPageProps {
   students: Student[]
   camps: Camp[]
   regs: Registration[]
-  profiles: StudentProfile[]
-  settings: SystemSettings | null
+  profiles: StudentProfileView[]
+  settings: PublicSettings | null
   loggedInStudentId: string | null
-  getProfile: (id: string) => StudentProfile
+  getProfile: (id: string) => StudentProfileView
   onLogin: (studentId: string, password: string) => Promise<{ ok: true } | { ok: false; message: string; locked: boolean }>
   onLogout: () => void
-  onChangePassword: (studentId: string, next: string) => Promise<void>
+  onChangePassword: (studentId: string, currentPassword: string, next: string) => Promise<StudentLoginResult>
   onEnroll: (s: Student, c: Camp) => Promise<VResult>
   onCancel: (regId: string) => Promise<VResult>
   onLeave: (regId: string, dates: string[], reason: string) => Promise<VResult>
@@ -38,6 +38,7 @@ export default function FrontPage(p: FrontPageProps) {
   const [pwd, setPwd] = useState('')
   const [msg, setMsg] = useState('')
   const [msgOk, setMsgOk] = useState(false)
+  const [curPwd, setCurPwd] = useState('')
   const [newPwd, setNewPwd] = useState('')
   const [leaveFor, setLeaveFor] = useState<string | null>(null)
   const [leaveDates, setLeaveDates] = useState<string[]>([])
@@ -125,16 +126,25 @@ export default function FrontPage(p: FrontPageProps) {
                   </button>
                 </div>
                 <div className="flex flex-wrap items-end gap-2">
-                  <label className="grid flex-1 gap-1 text-xs text-slate-500 min-w-[12rem]">
+                  <label className="grid flex-1 gap-1 text-xs text-slate-500 min-w-[10rem]">
+                    {locale === 'en' ? 'Current password' : '目前密碼'}
+                    <input type="password" className="input-field" value={curPwd} onChange={e => setCurPwd(e.target.value)} autoComplete="current-password" />
+                  </label>
+                  <label className="grid flex-1 gap-1 text-xs text-slate-500 min-w-[10rem]">
                     {t('pass.changePwd')}
-                    <input type="password" className="input-field" value={newPwd} onChange={e => setNewPwd(e.target.value)} />
+                    <input type="password" className="input-field" value={newPwd} onChange={e => setNewPwd(e.target.value)} autoComplete="new-password" />
                   </label>
                   <button
                     type="button"
                     className="btn-ghost !py-2"
-                    disabled={newPwd.length < 4}
+                    disabled={!curPwd || newPwd.length < 4}
                     onClick={async () => {
-                      await p.onChangePassword(stu.student_id, newPwd)
+                      const r = await p.onChangePassword(stu.student_id, curPwd, newPwd)
+                      if (!r.success) {
+                        showMsg(r.message, false)
+                        return
+                      }
+                      setCurPwd('')
                       setNewPwd('')
                       showMsg(locale === 'en' ? 'Password updated' : '密碼已更新', true)
                     }}

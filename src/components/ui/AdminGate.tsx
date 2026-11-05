@@ -3,23 +3,26 @@ import { Lock, ShieldCheck } from 'lucide-react'
 import { useI18n } from '../../lib/I18nContext'
 
 export default function AdminGate({
-  expectedPassword,
-  onSuccess,
+  onVerify,
 }: {
-  expectedPassword: string
-  onSuccess: () => void
+  onVerify: (password: string) => Promise<void>
 }) {
   const { t } = useI18n()
   const [pwd, setPwd] = useState('')
   const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
 
-  const submit = (e: FormEvent) => {
+  const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (pwd === expectedPassword) {
-      onSuccess()
-      return
+    setBusy(true)
+    setErr('')
+    try {
+      await onVerify(pwd)
+    } catch {
+      setErr(t('admin.wrong'))
+    } finally {
+      setBusy(false)
     }
-    setErr(t('admin.wrong'))
   }
 
   return (
@@ -42,11 +45,12 @@ export default function AdminGate({
             value={pwd}
             onChange={e => setPwd(e.target.value)}
             autoFocus
+            autoComplete="current-password"
             aria-label={t('admin.password')}
           />
         </label>
         {err && <p role="alert" className="text-sm text-rose-600">{err}</p>}
-        <button type="submit" className="btn-primary">
+        <button type="submit" className="btn-primary" disabled={busy || !pwd}>
           <Lock className="h-4 w-4" aria-hidden />
           {t('admin.unlock')}
         </button>

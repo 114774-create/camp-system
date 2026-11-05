@@ -14,20 +14,12 @@ export interface EmergencyContact {
   is_primary: boolean
 }
 
-export interface StudentProfile {
+/** 前端可持有的學生個資視圖（不含 password_hash） */
+export interface StudentProfileView {
   student_id: string
-  password_hash: string
   failed_attempts: number
   is_locked: boolean
   emergency_contacts: EmergencyContact[]
-}
-
-export interface SystemSettings {
-  id: string
-  admin_password: string
-  registration_start_at: string
-  registration_end_at: string
-  term_name: string
 }
 
 export interface CampSubClass {
@@ -75,5 +67,20 @@ export interface Registration {
   leave_reason?: string
 }
 
+/** 公開設定（絕不包含後台密碼） */
+export interface PublicSettings {
+  id: string
+  registration_start_at: string
+  registration_end_at: string
+  term_name: string
+}
+
+/** @deprecated 使用 PublicSettings；保留別名避免舊引用中斷 */
+export type SystemSettings = PublicSettings
+
 export type Locale = 'zh-TW' | 'en'
 export type Tab = 'front' | 'contacts' | 'camps' | 'students' | 'settings' | 'r1' | 'r2' | 'r3'
+
+export type StudentLoginResult =
+  | { success: true; emergency_contacts: EmergencyContact[]; is_locked: false; remaining_attempts: number }
+  | { success: false; remaining_attempts: number; is_locked: boolean; message: string }

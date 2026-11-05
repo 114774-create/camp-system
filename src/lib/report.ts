@@ -1,13 +1,12 @@
-import { Camp, Registration, Student, StudentProfile } from '../types'
+import { Camp, Registration, Student, StudentProfileView, Locale } from '../types'
 import { campDisplayName } from './i18n'
-import { Locale } from '../types'
 import { formatContactLine } from './auth'
 
 export interface ReportProps {
   students: Student[]
   camps: Camp[]
   regs: Registration[]
-  profiles?: StudentProfile[]
+  profiles?: StudentProfileView[]
   locale?: Locale
 }
 
@@ -35,7 +34,7 @@ export const csv = (name: string, rows: (string | number)[][]) => {
   a.click()
 }
 
-export function contactOf(studentId: string, profiles?: StudentProfile[]) {
+export function contactOf(studentId: string, profiles?: StudentProfileView[]) {
   return formatContactLine(profiles?.find(p => p.student_id === studentId))
 }
 
