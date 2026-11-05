@@ -9,10 +9,12 @@ export function maskName(name: string): string {
 
 /** 依語系與登入狀態顯示學生姓名 */
 export function displayStudentName(
-  student: { name: string; ename?: string },
+  student: { name: string; ename?: string; maskedName?: string },
   opts: { locale: 'zh-TW' | 'en'; revealed: boolean },
 ): string {
-  const zh = opts.revealed ? student.name : maskName(student.name)
+  const zh = opts.revealed
+    ? student.name
+    : (student.maskedName?.trim() || maskName(student.name))
   if (opts.locale === 'en') {
     const en = student.ename?.trim()
     if (en) return `${en} (${zh})`

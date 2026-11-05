@@ -4,6 +4,8 @@ export interface Student {
   classCode: string
   no: number
   name: string
+  /** 試算表提供的遮罩姓名（未登入時優先使用） */
+  maskedName?: string
   ename?: string
 }
 

@@ -18,7 +18,10 @@ npm i && npm test && npm run dev
 - Date Picker 多日選擇、簽到表顯示主要緊急聯絡人與請假標記
 
 ## 設定
-- 學生名單：`src/services/studentService.ts` 填入 `SHEET_ID`（試算表需「知道連結者可檢視」），失敗自動使用 Mock。
-- Supabase：在 SQL Editor 執行 `supabase/schema.sql`，並在 `.env` 設定 `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`；未設定時自動使用 localStorage RPC 模擬模式。
+- 學生名單（`.env.local`）：
+  - 優先：`VITE_STUDENT_SHEET_API_URL`（Google Apps Script，回傳 JSON）
+  - 備選：`VITE_GOOGLE_SHEET_URL`（試算表網址／ID，自動轉 `gviz/tq?tqx=out:csv&sheet=Students`）
+  - 欄位：`id`、`grade`、`no`、`name`、`maskedName`、`ename`；失敗或未設定時退回 Mock
+- Supabase：在 SQL Editor 執行 `supabase/schema.sql`，並在 `.env.local` 設定 `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`；未設定時自動使用 localStorage RPC 模擬模式。
 - 後台預設密碼寫入於 schema seed（雜湊），上線後請立刻於「系統設定」更換。
 - 名額以資料庫 trigger 做最終把關，前端檢核僅用於即時提示。
