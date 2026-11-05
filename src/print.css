@@ -1,0 +1,1 @@
+@media print { .no-print { display: none !important } .pg { break-after: page } @page { size: A4; margin: 10mm } }

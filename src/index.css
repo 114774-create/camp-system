@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --cream: #fffdf9;
+  --cream-deep: #fff8ee;
+  --sun: #f97316;
+  --sun-deep: #ea580c;
+  --forest: #059669;
+  --sky: #0284c7;
+  --ink: #1e293b;
+  --muted: #64748b;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: 'Noto Sans TC', 'Plus Jakarta Sans', system-ui, sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(ellipse 80% 50% at 10% -10%, rgba(251, 191, 36, 0.18), transparent 55%),
+    radial-gradient(ellipse 70% 45% at 95% 5%, rgba(52, 211, 153, 0.12), transparent 50%),
+    radial-gradient(ellipse 60% 40% at 50% 100%, rgba(56, 189, 248, 0.08), transparent 55%),
+    var(--cream);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+@layer components {
+  .camp-card {
+    @apply rounded-2xl border border-amber-200/70 bg-white/90 shadow-sm
+      transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md;
+  }
+
+  .badge-pill {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl bg-orange-500 px-4 py-2.5
+      text-sm font-semibold text-white shadow-sm transition
+      hover:bg-orange-600 active:scale-[0.98]
+      disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none disabled:active:scale-100;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-xl border border-slate-200
+      bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition
+      hover:border-amber-200 hover:bg-amber-50;
+  }
+
+  .input-field {
+    @apply w-full rounded-xl border border-amber-200/80 bg-white px-3 py-2.5 text-sm
+      outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-200;
+  }
+
+  .alert-pill {
+    @apply mt-3 flex items-start gap-2 rounded-xl border px-3 py-2 text-sm;
+  }
+
+  .section-title {
+    @apply font-display text-lg font-bold tracking-tight text-slate-800;
+  }
+}
+
+@media print {
+  body {
+    background: white !important;
+  }
+}
