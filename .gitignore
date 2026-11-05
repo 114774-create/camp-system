@@ -1,0 +1,17 @@
+# 依賴套件 (最重要，防止上傳)
+node_modules
+
+# 打包產物
+dist
+dist-ssr
+
+# 環境變數 (保護資安)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 日誌檔
+npm-debug.log*
+*.log
