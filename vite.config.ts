@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
     // 單元測試勿載入 .env.local 的正式 Supabase／Sheets 連線
     env: {
       VITE_SUPABASE_URL: '',

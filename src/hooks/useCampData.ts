@@ -6,6 +6,7 @@ import { getRepo } from '../data/repo'
 import { loadStudents } from '../services/studentService'
 import { validateRegistration, VResult, canCancelOrEnroll, canRequestLeave } from '../lib/validate'
 import { autoAssign } from '../lib/assign'
+import { canPromote } from '../lib/waitlist'
 import { emptyProfileView, readAdminToken } from '../lib/auth'
 
 const repo = getRepo()
@@ -135,22 +136,25 @@ export function useCampData() {
     const profile = getProfile(student.student_id)
     const v = validateRegistration(student, camp, camp.dates[0], regs, camps, { profile, settings })
     if (!v.ok) return v
-    const r: Registration = {
-      id: crypto.randomUUID(),
-      student_id: student.student_id,
-      camp_id: camp.id,
-      status: 'enrolled',
-      created_at: new Date().toISOString(),
-      leave_dates: [],
+    const base = {
+      id: crypto.randomUUID(), student_id: student.student_id, camp_id: camp.id,
+      created_at: new Date().toISOString(), leave_dates: [] as string[],
     }
+    let r: Registration = { ...base, status: v.waitlist ? 'waitlisted' : 'enrolled' }
     try {
       await repo.upsertRegs([r])
     } catch {
-      await reloadPublic()
-      return { ok: false, code: 'FULL', message: '報名失敗，名額可能剛被報滿，請重新確認' }
+      // 前端以為有名額、但資料庫已被搶滿（CAMP_FULL）→ 改排入候補
+      if (r.status === 'enrolled') {
+        r = { ...r, status: 'waitlisted' }
+        try { await repo.upsertRegs([r]) } catch { await reloadPublic(); return { ok: false, code: 'FULL', message: '報名失敗，請重新整理後再試' } }
+      } else {
+        await reloadPublic()
+        return { ok: false, code: 'FULL', message: '報名失敗，請重新整理後再試' }
+      }
     }
     setRegs(p => [...p, r])
-    return v
+    return r.status === 'waitlisted' ? { ok: true, waitlist: true } : { ok: true }
   }
 
   const cancel = async (id: string): Promise<VResult> => {
@@ -158,10 +162,23 @@ export function useCampData() {
       return { ok: false, code: 'WINDOW', message: '報名已截止' }
     }
     const r = regs.find(x => x.id === id)
-    if (!r) return { ok: false, code: 'DUP', message: '找不到報名紀錄' }
+    if (!r || r.status === 'cancelled') return { ok: false, code: 'DUP', message: '找不到報名紀錄' }
     const n = { ...r, status: 'cancelled' as const, cancelled_at: new Date().toISOString() }
     await repo.upsertRegs([n])
     setRegs(p => p.map(x => x.id === id ? n : x))
+    return { ok: true }
+  }
+
+  /** 後台：候補遞補轉正（名額不足時拒絕） */
+  const promoteWaitlist = async (regId: string): Promise<VResult> => {
+    const r = regs.find(x => x.id === regId)
+    if (!r || r.status !== 'waitlisted') return { ok: false, code: 'DUP', message: '找不到候補紀錄' }
+    const camp = camps.find(c => c.id === r.camp_id)
+    if (!camp) return { ok: false, code: 'DUP', message: '找不到營隊' }
+    if (!canPromote(camp, regs)) return { ok: false, code: 'FULL', message: '目前沒有空缺，請等有人取消，或先調高名額上限' }
+    try { await repo.adminPromoteWaitlist(requireAdminPassword(), regId) }
+    catch { await reloadPublic(); return { ok: false, code: 'FULL', message: '遞補失敗：名額已被占用或權限不足，已重新載入資料' } }
+    setRegs(p => p.map(x => x.id === regId ? { ...x, status: 'enrolled' as const } : x))
     return { ok: true }
   }
 
@@ -230,11 +247,14 @@ export function useCampData() {
     setProfiles(prev => prev.filter(p => p.student_id !== studentId))
   }
 
+  /** 學生登入成功後：丟棄後台載入的全校個資，只保留該生自己的 */
+  const keepOnlyProfile = (studentId: string) => setProfiles(prev => prev.filter(p => p.student_id === studentId))
+
   return {
     students, camps, regs, profiles, settings, loading,
     getProfile, loginStudent, changeStudentPassword, saveEmergencyContacts,
     verifyAdmin, unlockStudent, resetStudentPassword, adminSaveContacts,
-    enroll, cancel, requestLeave, setSubClass, autoAssign: runAutoAssign,
+    enroll, cancel, promoteWaitlist, keepOnlyProfile, requestLeave, setSubClass, autoAssign: runAutoAssign,
     saveCamp, deleteCamp, saveSettings, reloadPublic, clearStudentPii, refreshAdminProfiles,
   }
 }

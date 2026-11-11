@@ -57,11 +57,14 @@ export interface Camp {
   notes: string
 }
 
+export type RegStatus = 'enrolled' | 'waitlisted' | 'cancelled'
+
 export interface Registration {
   id: string
   student_id: string
   camp_id: string
-  status: 'enrolled' | 'cancelled'
+  /** enrolled=正取；waitlisted=候補（依 created_at 先後遞補）；cancelled=已取消 */
+  status: RegStatus
   assigned_sub_class?: string
   created_at: string
   cancelled_at?: string
@@ -81,7 +84,7 @@ export interface PublicSettings {
 export type SystemSettings = PublicSettings
 
 export type Locale = 'zh-TW' | 'en'
-export type Tab = 'front' | 'contacts' | 'camps' | 'students' | 'settings' | 'r1' | 'r2' | 'r3'
+export type Tab = 'front' | 'profile' | 'status' | 'camps' | 'students' | 'settings' | 'r1' | 'r2' | 'r3'
 
 export type StudentLoginResult =
   | { success: true; emergency_contacts: EmergencyContact[]; is_locked: false; remaining_attempts: number }

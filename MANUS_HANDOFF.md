@@ -35,3 +35,17 @@
 
 ## 交付
 請回報：修改了哪些檔案、新增了哪些子元件、是否新增套件（盡量不要；若需要請說明理由）。
+
+---
+## 第三階段更新（候補、分頁重構、前後台互斥）
+
+**新增可改外觀的元件**（同樣只能改樣式與版面，不可動 props／邏輯）：
+`components/ui/GuideCard.tsx`（使用教學）、`ProfilePage.tsx` + `PasswordForm.tsx`（個人資料與設定）、`StatusPage.tsx`（我的報名狀態）、`Notice.tsx`（提示訊息）。
+
+**新增鎖定檔案（不可修改）**：`lib/waitlist.ts`、`lib/session.ts`、`lib/assign.ts`（S 型分班）、`components/smoke.test.tsx`。
+
+**外觀注意事項**
+- 候補按鈕文字／可否點擊一律來自 `buttonState()`（`kind === 'waitlist'` 時用醒目但不同於「報名」的顏色，目前為琥珀色）。
+- 「候補中」與「報名成功」必須用不同顏色與文字區分（StatusPage）。
+- 後台候補名單的「遞補轉正」按鈕 disabled 狀態來自 `canPromote()`，不可移除。
+- 驗收新增：`npm test` 需 35 個以上測試通過（含 `smoke.test.tsx` 渲染測試）。

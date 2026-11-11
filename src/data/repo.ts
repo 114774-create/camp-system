@@ -36,6 +36,8 @@ export interface Repo {
   ): Promise<PublicSettings>
   adminSaveCamp(adminPassword: string, camp: Camp): Promise<void>
   adminDeleteCamp(adminPassword: string, campId: string): Promise<void>
+  /** 候補遞補轉正：伺服器端檢查名額，已滿拋出 CAMP_FULL */
+  adminPromoteWaitlist(adminPassword: string, regId: string): Promise<void>
 }
 
 // ─── localStorage 內部結構（含 hash，永不當作公開 API 回傳）───
@@ -265,6 +267,17 @@ const localRepo: Repo = {
     await localAssertAdmin(adminPassword)
     saveLs('camp_camps', ls<Camp[]>('camp_camps', SEED).filter(x => x.id !== campId))
   },
+
+  async adminPromoteWaitlist(adminPassword, regId) {
+    await localAssertAdmin(adminPassword)
+    const regs = ls<Registration[]>('camp_regs', [])
+    const r = regs.find(x => x.id === regId)
+    if (!r || r.status !== 'waitlisted') throw new Error('NOT_WAITLISTED')
+    const camp = ls<Camp[]>('camp_camps', SEED).find(c => c.id === r.camp_id)
+    const n = regs.filter(x => x.camp_id === r.camp_id && x.status === 'enrolled').length
+    if (camp && n >= camp.max_capacity) throw new Error('CAMP_FULL')
+    saveLs('camp_regs', regs.map(x => x.id === regId ? { ...x, status: 'enrolled' as const } : x))
+  },
 }
 
 // ─── Supabase RPC ─────────────────────────────────────────
@@ -427,6 +440,14 @@ function createSupaRepo(sb: SupabaseClient): Repo {
       const { error } = await sb.rpc('camp_admin_delete_camp', {
         p_admin_password: adminPassword,
         p_camp_id: campId,
+      })
+      if (error) rpcError(error)
+    },
+
+    async adminPromoteWaitlist(adminPassword, regId) {
+      const { error } = await sb.rpc('camp_admin_promote_waitlist', {
+        p_admin_password: adminPassword,
+        p_reg_id: regId,
       })
       if (error) rpcError(error)
     },

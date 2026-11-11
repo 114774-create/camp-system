@@ -26,3 +26,8 @@ npm i && npm test && npm run dev
 - Supabase：在 SQL Editor 執行 `supabase/schema.sql`，並在 `.env.local` 設定 `VITE_SUPABASE_URL`、`VITE_SUPABASE_ANON_KEY`；未設定時自動使用 localStorage RPC 模擬模式。
 - 後台預設密碼寫入於 schema seed（雜湊），上線後請立刻於「系統設定」更換。
 - 名額以資料庫 trigger 做最終把關，前端檢核僅用於即時提示。
+
+## 第三階段（候補／分頁重構／互斥登入）部署注意
+1. 既有 Supabase 資料庫請**重新執行 `supabase/schema.sql`**（已寫成可重複執行：放寬 status 檢查、改建唯一索引、新增 `camp_admin_promote_waitlist`）。
+2. 前台分頁：營隊報名與首頁／個人資料與設定／我的報名狀態。
+3. 前後台登入互斥：後台登入會清除學生登入；學生登入會清除後台登入（`lib/session.ts`）。

@@ -1,11 +1,11 @@
 import { ReactNode } from 'react'
-import { Compass, Globe2, Lock, LogOut, Printer, Settings2, Sun, Tent, UserRound, Users } from 'lucide-react'
+import { Compass, Globe2, Lock, LogOut, Printer, Settings2, Sun, Tent, Ticket, UserRound, Users } from 'lucide-react'
 import { Tab } from '../../types'
 import { useI18n } from '../../lib/I18nContext'
 import { formatTaipei, registrationWindowStatus } from '../../lib/time'
 import { PublicSettings } from '../../types'
 
-const STUDENT_TABS: Tab[] = ['front', 'contacts']
+const STUDENT_TABS: Tab[] = ['front', 'status', 'profile']
 const ADMIN_TABS: Tab[] = ['camps', 'students', 'settings', 'r1', 'r2', 'r3']
 
 export default function AppShell({
@@ -102,14 +102,24 @@ export default function AppShell({
                 {t('nav.front')}
               </button>
               {studentLoggedIn && (
+                <>
                 <button
                   type="button"
-                  onClick={() => go('contacts')}
-                  className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold ${tab === 'contacts' ? 'bg-orange-500 text-white' : 'text-slate-600 hover:bg-white/80'}`}
+                  onClick={() => go('status')}
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold ${tab === 'status' ? 'bg-orange-500 text-white' : 'text-slate-600 hover:bg-white/80'}`}
+                >
+                  <Ticket className="h-4 w-4" aria-hidden />
+                  {t('nav.status')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => go('profile')}
+                  className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold ${tab === 'profile' ? 'bg-orange-500 text-white' : 'text-slate-600 hover:bg-white/80'}`}
                 >
                   <UserRound className="h-4 w-4" aria-hidden />
-                  {t('nav.contacts')}
+                  {t('nav.profile')}
                 </button>
+                </>
               )}
             </div>
 

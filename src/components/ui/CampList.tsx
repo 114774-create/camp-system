@@ -1,12 +1,18 @@
-import { Layers, Pencil, Plus, Trash2, Users, Wand2 } from 'lucide-react'
+import { useState } from 'react'
+import { ArrowUpCircle, Hourglass, Layers, Pencil, Plus, Trash2, Users, Wand2 } from 'lucide-react'
 import { Camp, Registration, Student } from '../../types'
 import { campLabel, enrolledJoin } from '../../lib/report'
 import { useI18n } from '../../lib/I18nContext'
+import { canPromote, waitlistOf } from '../../lib/waitlist'
+import { VResult } from '../../lib/validate'
+import Notice from './Notice'
 
 export interface CampListProps {
   students: Student[]; camps: Camp[]; regs: Registration[]
   onNew: () => void; onEdit: (c: Camp) => void; onDelete: (id: string) => void
   onAutoAssign: (campId: string) => void; onSetSubClass: (regId: string, sc: string) => void
+  /** 候補遞補轉正（後台手動） */
+  onPromote: (regId: string) => Promise<VResult>
 }
 
 function capacityTone(n: number, max: number) {
@@ -17,6 +23,7 @@ function capacityTone(n: number, max: number) {
 
 export default function CampList(p: CampListProps) {
   const { t, locale } = useI18n()
+  const [wmsg, setWmsg] = useState(''), [wok, setWok] = useState(false)
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -29,9 +36,12 @@ export default function CampList(p: CampListProps) {
         </button>
       </div>
 
+      <Notice msg={wmsg} ok={wok} onClose={() => setWmsg('')} />
       <div className="grid gap-3">
         {p.camps.map(c => {
           const list = enrolledJoin(c.id, p)
+          const wait = waitlistOf(c.id, p.regs)
+          const seatOpen = canPromote(c, p.regs)
           const pct = Math.min(100, Math.round((list.length / Math.max(1, c.max_capacity)) * 100))
           const isSingle = c.attendance_mode === 'single_day_choice'
           return (
@@ -63,7 +73,7 @@ export default function CampList(p: CampListProps) {
               </div>
               <div className="mt-3">
                 <div className="mb-1 flex justify-between text-xs">
-                  <span className="inline-flex items-center gap-1 font-semibold text-slate-600"><Users className="h-3.5 w-3.5" />{list.length} / {c.max_capacity}</span>
+                  <span className="inline-flex items-center gap-1 font-semibold text-slate-600"><Users className="h-3.5 w-3.5" />{list.length} / {c.max_capacity}{wait.length > 0 && <span className="ml-2 text-amber-700">{t('camp.waitCount', { n: wait.length })}</span>}</span>
                   <span className="text-slate-400">{pct}%</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-slate-100">
@@ -89,6 +99,26 @@ export default function CampList(p: CampListProps) {
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+              {wait.length > 0 && (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/60 p-3">
+                  <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-amber-900"><Hourglass className="h-4 w-4" aria-hidden />{t('admin.waitlist')}（{wait.length}）</p>
+                  <ol className="grid gap-2">
+                    {wait.map((r, i) => {
+                      const s = p.students.find(x => x.student_id === r.student_id)
+                      return (
+                        <li key={r.id} className="flex flex-col gap-2 rounded-xl border border-white bg-white/90 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                          <span className="text-sm font-medium">#{i + 1}　{s ? `${s.classCode}-${s.no} ${s.name}` : r.student_id}<span className="ml-2 text-xs text-slate-400">{new Date(r.created_at).toLocaleString(locale === 'en' ? 'en-US' : 'zh-TW', { hour12: false })}</span></span>
+                          <button type="button" disabled={!seatOpen} title={!seatOpen ? t('admin.noSeat') : undefined}
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                            onClick={async () => { const v = await p.onPromote(r.id); setWok(v.ok); setWmsg(v.ok ? t('admin.promoted') : v.message) }}>
+                            <ArrowUpCircle className="h-4 w-4" aria-hidden />{t('admin.promote')}
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ol>
                 </div>
               )}
             </article>

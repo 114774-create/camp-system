@@ -16,7 +16,7 @@ create table if not exists camp_registrations (
   id text primary key,
   student_id text not null,
   camp_id text not null references camp_camps(id) on delete cascade,
-  status text not null check (status in ('enrolled','cancelled')),
+  status text not null check (status in ('enrolled','waitlisted','cancelled')),
   assigned_sub_class text,
   created_at timestamptz not null default now(),
   cancelled_at timestamptz,
@@ -24,8 +24,19 @@ create table if not exists camp_registrations (
   leave_reason text
 );
 
-create unique index if not exists camp_one_active_per_camp
-  on camp_registrations(student_id, camp_id) where status = 'enrolled';
+-- ─── 第三階段遷移（候補）：既有資料庫重跑本檔即可升級，可重複執行 ───
+alter table camp_registrations drop constraint if exists camp_registrations_status_check;
+alter table camp_registrations add constraint camp_registrations_status_check
+  check (status in ('enrolled','waitlisted','cancelled'));
+
+-- 每位學生對同一營隊只能有 1 筆有效報名（正取或候補）
+drop index if exists camp_one_active_per_camp;
+create unique index if not exists camp_one_live_per_camp
+  on camp_registrations(student_id, camp_id) where status in ('enrolled','waitlisted');
+
+-- 候補排序用索引
+create index if not exists camp_waitlist_order
+  on camp_registrations(camp_id, created_at) where status = 'waitlisted';
 
 create or replace function camp_enforce_capacity() returns trigger language plpgsql as $$
 begin
@@ -352,6 +363,21 @@ returns jsonb language plpgsql security definer set search_path = public, extens
 begin
   perform camp_assert_admin(p_admin_password);
   delete from camp_camps where id = p_camp_id;
+  return jsonb_build_object('success', true);
+end $$;
+
+-- 候補遞補轉正（後台）：名額已滿時拒絕；容量另有 trg_camp_capacity 最終把關
+create or replace function camp_admin_promote_waitlist(p_admin_password text, p_reg_id text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare
+  r camp_registrations%rowtype;
+begin
+  perform camp_assert_admin(p_admin_password);
+  select * into r from camp_registrations where id = p_reg_id for update;
+  if not found or r.status <> 'waitlisted' then
+    raise exception 'NOT_WAITLISTED';
+  end if;
+  update camp_registrations set status = 'enrolled' where id = p_reg_id;  -- 觸發 CAMP_FULL 檢核
   return jsonb_build_object('success', true);
 end $$;
 
