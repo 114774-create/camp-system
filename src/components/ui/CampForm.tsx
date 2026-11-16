@@ -3,8 +3,10 @@ import { ArrowLeft, Info, Save } from 'lucide-react'
 import { Camp } from '../../types'
 import DateChipsPicker from './DateChipsPicker'
 import { useI18n } from '../../lib/I18nContext'
+import { buildCamps } from '../../lib/sessions'
+import { md } from '../../lib/validate'
 
-export interface CampFormProps { initial: Camp | null; onSave: (c: Camp) => void; onCancel: () => void }
+export interface CampFormProps { initial: Camp | null; onSave: (camps: Camp[]) => void | Promise<void>; onCancel: () => void }
 
 const BLANK: Camp = {
   id: '', term: '115學年度夏令營', season: 'summer', name: '', name_en: '',
@@ -49,15 +51,17 @@ export default function CampForm({ initial, onSave, onCancel }: CampFormProps) {
   const [concurrent, setConcurrent] = useState((c.allow_concurrent_with ?? []).join(','))
   const set = <K extends keyof Camp>(k: K, v: Camp[K]) => setC(p => ({ ...p, [k]: v }))
 
+  const single = c.attendance_mode === 'single_day_choice'
+  const sessions = single ? [...new Set(dates)].sort() : []
+
   const submit = () => {
-    if (!c.name || !dates.length) return alert(locale === 'en' ? 'Please fill camp name and dates' : '請填寫營隊名稱與上課日期')
-    onSave({
-      ...c,
-      id: c.id || crypto.randomUUID(),
-      dates: [...dates].sort(),
-      allow_concurrent_with: concurrent.split(',').map(x => x.trim()).filter(Boolean),
-      sub_classes: c.has_sub_classes ? textToSub(sub) : [],
-    })
+    const r = buildCamps(
+      { ...c, allow_concurrent_with: concurrent.split(',').map(x => x.trim()).filter(Boolean), sub_classes: c.has_sub_classes ? textToSub(sub) : [] },
+      dates,
+      { originalDate: initial?.dates[0] },
+    )
+    if (!r.ok) return alert(r.error)
+    onSave(r.camps)
   }
 
   return (
@@ -99,12 +103,19 @@ export default function CampForm({ initial, onSave, onCancel }: CampFormProps) {
         {c.attendance_mode === 'single_day_choice' && (
           <div>
             <label className="grid gap-1.5 text-sm font-medium">{locale === 'en' ? 'Session group ID' : '場次群組代碼'}
-              <input className="input-field" value={c.group_id ?? ''} onChange={e => set('group_id', e.target.value)} placeholder="bake" />
+              <input className="input-field" value={c.group_id ?? ''} onChange={e => set('group_id', e.target.value)} placeholder={locale === 'en' ? 'Leave blank to auto-generate' : '可留空，系統自動產生'} />
             </label>
-            <Helper>{locale === 'en' ? 'Same group code for each day session; one camp record per day.' : '同群組各日場次請填相同代碼；每場次各建一筆，日期只填一天。'}</Helper>
+            <Helper>{locale === 'en' ? 'Sessions in the same group: each student may join only one. Pick several dates below and they are split into one session per day automatically.' : '同一群組的場次，每位學生只能擇一參加。下方可一次選多個日期，儲存時會自動拆成「每天一個場次」。'}</Helper>
           </div>
         )}
         <DateChipsPicker value={dates} onChange={setDates} label={locale === 'en' ? 'Camp dates' : '上課日期'} />
+        {single && sessions.length > 0 && (
+          <p className="rounded-xl border border-sky-100 bg-sky-50/60 px-3 py-2 text-sm text-sky-900">
+            {locale === 'en'
+              ? `Will create ${sessions.length} session(s): ${sessions.map(md).join(', ')} — each capped at ${c.max_capacity}.`
+              : `儲存後將建立 ${sessions.length} 個場次：${sessions.map(md).join('、')}，每個場次各自上限 ${c.max_capacity} 人。`}
+          </p>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-1.5 text-sm font-medium">{locale === 'en' ? 'Start' : '開始時間'}
             <input type="time" className="input-field" value={c.start_time} onChange={e => set('start_time', e.target.value)} />
@@ -136,9 +147,13 @@ export default function CampForm({ initial, onSave, onCancel }: CampFormProps) {
             ))}
           </div>
         </fieldset>
-        <label className="grid gap-1.5 text-sm font-medium max-w-[12rem]">{locale === 'en' ? 'Capacity' : '人數上限'}
-          <input type="number" min={1} className="input-field" value={c.max_capacity} onChange={e => set('max_capacity', +e.target.value)} />
-        </label>
+        <div>
+          <label className="grid gap-1.5 text-sm font-medium max-w-[12rem]">
+            {single ? (locale === 'en' ? 'Capacity per session' : '每一場次人數上限') : (locale === 'en' ? 'Capacity' : '人數上限')}
+            <input type="number" min={1} className="input-field" value={c.max_capacity} onChange={e => set('max_capacity', +e.target.value)} />
+          </label>
+          {single && <Helper>{locale === 'en' ? 'Applies to each day separately (e.g. 2 days × 30).' : '每個日期場次各自計算，例如 2 天、上限 30，就是每天各 30 人。'}</Helper>}
+        </div>
       </StepCard>
 
       <StepCard step={3} title={locale === 'en' ? 'Advanced rules' : '進階規則（分班、共容）'}>

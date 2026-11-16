@@ -49,3 +49,8 @@
 - 「候補中」與「報名成功」必須用不同顏色與文字區分（StatusPage）。
 - 後台候補名單的「遞補轉正」按鈕 disabled 狀態來自 `canPromote()`，不可移除。
 - 驗收新增：`npm test` 需 35 個以上測試通過（含 `smoke.test.tsx` 渲染測試）。
+
+---
+## v3.1：單日擇一自動拆場次
+- 新增鎖定檔案：`lib/sessions.ts`（`buildCamps`）。`CampForm` 的 `onSave` 現在傳出 `Camp[]`（單日擇一會拆成每天一筆），props 簽章不可再改。
+- 單日擇一時，表單的「每一場次人數上限」文字與下方「將建立 N 個場次」預覽必須保留。

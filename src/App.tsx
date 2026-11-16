@@ -118,7 +118,7 @@ function AppInner() {
         ? <CampForm
             initial={editing === 'new' ? null : editing}
             onCancel={() => setEditing(null)}
-            onSave={async c => { await d.saveCamp(c); setEditing(null) }}
+            onSave={async cs => { for (const c of cs) await d.saveCamp(c); setEditing(null) }}
           />
         : <CampList
             {...rp}

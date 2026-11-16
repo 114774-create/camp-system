@@ -8,6 +8,7 @@ import StatusPage from './ui/StatusPage'
 import ProfilePage from './ui/ProfilePage'
 import CampList from './ui/CampList'
 import AppShell from './ui/AppShell'
+import CampForm from './ui/CampForm'
 import { emptyProfileView } from '../lib/auth'
 
 const camp = { id: 'a', term: 'T', season: 'summer', name: '桌遊營', attendance_mode: 'full_course', dates: ['2026-07-06', '2026-07-07'], start_time: '09:00', end_time: '12:00', allowed_grades: [1, 2, 3, 4, 5, 6], max_capacity: 1, ignore_time_conflict: false, allow_concurrent_with: [], has_sub_classes: false, sub_classes: [], location: '會議室', teacher: '王老師', notes: '' } as Camp
@@ -42,5 +43,9 @@ describe('render smoke', () => {
   it('導覽：登入後出現「我的報名狀態」「個人資料與設定」', () => {
     const html = wrap(<AppShell tab="front" onTab={() => {}} isAdminAuthenticated={false} onAdminLogout={() => {}} studentLoggedIn>x</AppShell>)
     expect(html).toContain('我的報名狀態'); expect(html).toContain('個人資料與設定'); expect(html).toContain('營隊報名與首頁')
+  })
+  it('營隊表單：單日擇一時顯示「每一場次人數上限」', () => {
+    const html = wrap(<CampForm initial={{ ...camp, attendance_mode: 'single_day_choice', group_id: 'g', dates: ['2026-12-05'] }} onSave={() => {}} onCancel={() => {}} />)
+    expect(html).toContain('每一場次人數上限'); expect(html).toContain('儲存後將建立 1 個場次')
   })
 })
