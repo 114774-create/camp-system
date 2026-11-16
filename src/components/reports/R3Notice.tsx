@@ -30,52 +30,70 @@ export default function R3Notice(p: ReportProps) {
       </div>
       {pages.map((pg, i) => (
         <div key={i} className="pg">
-          {pg.map(s => (
-            <div key={s.student_id} className="border-b-2 border-dashed pb-2 mb-2" style={{ height: '88mm' }}>
-              <h3 className="text-center font-bold">
-                {p.camps[0]?.term} {locale === 'en' ? 'Camp Enrollment Notice' : '營隊錄取暨上課通知單'}
-              </h3>
-              <p className="text-sm">
-                {s.classCode} {locale === 'en' ? 'Class' : '班'} {s.no} {locale === 'en' ? 'No.' : '號'}　
-                {displayStudentName(s, { locale, revealed: true })}
-              </p>
-              <p className="text-xs text-slate-600">
-                {locale === 'en' ? 'Emergency contact' : '緊急聯絡人'}：{contactOf(s.student_id, p.profiles)}
-              </p>
-              <table className="w-full border-collapse text-xs">
-                <thead>
-                  <tr>
-                    {(locale === 'en'
-                      ? ['Camp', 'Class', 'Dates', 'Time', 'Location', 'Notes']
-                      : ['營隊', '分班', '日期', '時間', '地點', '注意事項']
-                    ).map(h => <th key={h} className="border p-1">{h}</th>)}
-                  </tr>
-                </thead>
-                <tbody>
-                  {all.filter(x => x.s.student_id === s.student_id).map(x => (
-                    <tr key={x.r.id}>
-                      <td className="border p-1">{x.c.name}</td>
-                      <td className="border p-1">{x.c.sub_classes.find(z => z.id === x.r.assigned_sub_class)?.name ?? '-'}</td>
-                      <td className="border p-1">
-                        {x.c.dates.map(d => {
-                          const leave = (x.r.leave_dates ?? []).includes(d)
-                          return `${md(d)}${leave ? `(${locale === 'en' ? 'Leave' : '請假'})` : ''}`
-                        }).join('、')}
-                      </td>
-                      <td className="border p-1">{x.c.start_time}-{x.c.end_time}</td>
-                      <td className="border p-1">{x.c.location}</td>
-                      <td className="border p-1">{x.c.notes}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="text-xs mt-2">
-                {locale === 'en'
-                  ? '✂ Parent acknowledgment: I have read the camp information. Signature: __________ Date: ______'
-                  : '✂ 家長簽收回條：我已知悉上述營隊資訊。家長簽名：__________　日期：______'}
-              </p>
-            </div>
-          ))}
+          {pg.map(s => {
+            const mine = all.filter(x => x.s.student_id === s.student_id)
+            const sname = displayStudentName(s, { locale, revealed: true })
+            const en = locale === 'en'
+            return (
+              <div key={s.student_id} className="mb-2 flex flex-col border-b border-slate-300 pb-2" style={{ height: '88mm' }}>
+                {/* 上半：營隊資訊（家長留存） */}
+                <div>
+                  <h3 className="text-center font-bold">
+                    {p.camps[0]?.term} {en ? 'Camp Enrollment Notice' : '營隊錄取暨上課通知單'}
+                  </h3>
+                  <p className="text-sm">
+                    {s.classCode} {en ? 'Class' : '班'} {s.no} {en ? 'No.' : '號'}　{sname}
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    {en ? 'Emergency contact' : '緊急聯絡人'}：{contactOf(s.student_id, p.profiles)}
+                  </p>
+                  <table className="w-full border-collapse text-xs">
+                    <thead>
+                      <tr>
+                        {(en ? ['Camp', 'Class', 'Dates', 'Time', 'Location', 'Notes'] : ['營隊', '分班', '日期', '時間', '地點', '注意事項'])
+                          .map(h => <th key={h} className="border p-1">{h}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mine.map(x => (
+                        <tr key={x.r.id}>
+                          <td className="border p-1">{x.c.name}</td>
+                          <td className="border p-1">{x.c.sub_classes.find(z => z.id === x.r.assigned_sub_class)?.name ?? '-'}</td>
+                          <td className="border p-1">
+                            {x.c.dates.map(d => {
+                              const leave = (x.r.leave_dates ?? []).includes(d)
+                              return `${md(d)}${leave ? `(${en ? 'Leave' : '請假'})` : ''}`
+                            }).join('、')}
+                          </td>
+                          <td className="border p-1">{x.c.start_time}-{x.c.end_time}</td>
+                          <td className="border p-1">{x.c.location}</td>
+                          <td className="border p-1">{x.c.notes}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="mt-1 text-[10px] text-slate-500">{en ? 'Please keep the section above for your records.' : '以上資料請家長留存。'}</p>
+                </div>
+
+                {/* 裁切線 + 下半：家長簽收回條（剪下後交回） */}
+                <div className="mt-auto">
+                  <div className="mb-1 flex items-center gap-2 text-[11px] text-slate-600">
+                    <span aria-hidden>✂</span>
+                    <span className="flex-1 border-t-2 border-dashed border-slate-500" />
+                    <span>{en ? 'Cut along the dashed line · return the slip below' : '沿虛線剪下・交回簽收回條'}</span>
+                    <span className="flex-1 border-t-2 border-dashed border-slate-500" />
+                  </div>
+                  <p className="text-xs">
+                    <b>{en ? 'Parent acknowledgment' : '家長簽收回條'}</b>：{s.classCode} {en ? 'Class' : '班'} {s.no} {en ? 'No.' : '號'} {sname}
+                  </p>
+                  <p className="text-xs text-slate-700">{en ? 'Camps' : '報名營隊'}：{mine.map(x => campLabel(x.c, locale)).join('、')}</p>
+                  <p className="mt-1 text-xs">
+                    {en ? 'I have read the camp information above. Signature: __________ Date: ______' : '我已知悉上述營隊資訊。家長簽名：__________　日期：______'}
+                  </p>
+                </div>
+              </div>
+            )
+          })}
         </div>
       ))}
     </div>

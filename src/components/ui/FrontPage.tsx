@@ -1,4 +1,4 @@
-// 分頁 A：營隊報名與首頁（教學 + 登入 + 可報名營隊）。密碼修改已移至「個人資料與設定」，報名狀態已移至「我的報名狀態」。
+// 分頁 A：營隊報名與首頁（教學 + 登入 + 可報名營隊）。密碼修改已移至「聯絡人資料與設定」，報名狀態已移至「我的報名狀態」。
 import { useState } from 'react'
 import { AlertCircle, IdCard, LogOut, Sparkles, Ticket, UserRound } from 'lucide-react'
 import { Camp, Registration, Student, StudentProfileView, PublicSettings } from '../../types'

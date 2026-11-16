@@ -3,6 +3,7 @@ import { Plus, Save, Trash2 } from 'lucide-react'
 import { EmergencyContact, Student, StudentLoginResult, StudentProfileView } from '../../types'
 import { useI18n } from '../../lib/I18nContext'
 import { displayStudentName } from '../../lib/maskName'
+import { cleanContacts, contactIssues, isValidTwPhone } from '../../lib/phone'
 
 const blank = (): EmergencyContact => ({ name: '', relation: '', phone: '', is_primary: false })
 
@@ -73,7 +74,11 @@ export default function ContactsPage({
               <input className="input-field" value={c.relation} onChange={e => setAt(i, { relation: e.target.value })} placeholder={locale === 'en' ? 'Parent / Guardian' : '父／母／監護人'} />
             </label>
             <label className="grid gap-1 text-sm sm:col-span-2">{t('contact.phone')}
-              <input className="input-field" value={c.phone} onChange={e => setAt(i, { phone: e.target.value })} placeholder="0912-345678" />
+              <input className="input-field" inputMode="tel" maxLength={16} value={c.phone} aria-invalid={!!c.phone.trim() && !isValidTwPhone(c.phone)}
+                onChange={e => setAt(i, { phone: e.target.value })} placeholder="0912345678 / 1234567" />
+              {c.phone.trim() && !isValidTwPhone(c.phone)
+                ? <span className="text-xs text-rose-600">{t('contact.phoneBad')}</span>
+                : <span className="text-xs text-slate-400">{t('contact.phoneHint')}</span>}
             </label>
           </div>
           <label className="inline-flex items-center gap-2 text-sm">
@@ -93,21 +98,23 @@ export default function ContactsPage({
           <Plus className="h-4 w-4" />
           {t('contact.add')}
         </button>
+        <button type="button" className="btn-ghost text-rose-600" onClick={() => { setList([blank()]); setOk(true); setMsg(t('contact.clearPending')) }}>
+          <Trash2 className="h-4 w-4" />
+          {t('contact.clearAll')}
+        </button>
         <button
           type="button"
           className="btn-primary"
           disabled={!pwd}
           onClick={async () => {
-            const cleaned = list.filter(c => c.name.trim() || c.phone.trim() || c.relation.trim())
-            if (!cleaned.some(c => c.name.trim() && c.phone.trim())) {
-              setOk(false)
-              setMsg(t('contact.hint'))
-              return
-            }
-            if (!cleaned.some(c => c.is_primary)) cleaned[0].is_primary = true
+            const filled = list.filter(c => c.name.trim() || c.phone.trim() || c.relation.trim())
+            const issues = contactIssues(filled)
+            if (issues.length) { setOk(false); setMsg(issues[0]); return }
+            if (filled.length === 0 && !window.confirm(t('contact.clearConfirm'))) return
+            const cleaned = cleanContacts(filled)
             const r = await onSave(cleaned, pwd)
             setOk(r.success)
-            setMsg(r.success ? t('contact.saved') : ('message' in r ? r.message : t('admin.wrong')))
+            setMsg(r.success ? (cleaned.length ? t('contact.saved') : t('contact.cleared')) : ('message' in r ? r.message : t('admin.wrong')))
           }}
         >
           <Save className="h-4 w-4" />

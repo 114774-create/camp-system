@@ -134,6 +134,8 @@ function AppInner() {
         <StudentAdmin
           students={d.students}
           profiles={d.profiles}
+          regs={d.regs}
+          onCancelAllRegs={d.adminCancelRegistrations}
           getProfile={d.getProfile}
           onUnlock={d.unlockStudent}
           onResetPassword={d.resetStudentPassword}

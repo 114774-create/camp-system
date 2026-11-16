@@ -38,7 +38,7 @@ export interface CampSessionDate {
 export interface Camp {
   id: string
   term: string
-  season: 'winter' | 'summer'
+  season: 'winter' | 'summer' | 'holiday'
   name: string
   name_en?: string
   group_id?: string

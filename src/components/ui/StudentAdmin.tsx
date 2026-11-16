@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { KeyRound, LockOpen, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react'
-import { EmergencyContact, Student, StudentProfileView } from '../../types'
+import { KeyRound, LockOpen, Plus, Save, ShieldAlert, Trash2, UserMinus, XCircle } from 'lucide-react'
+import { EmergencyContact, Registration, Student, StudentProfileView } from '../../types'
+import { cleanContacts, contactIssues } from '../../lib/phone'
 import { useI18n } from '../../lib/I18nContext'
 import { displayStudentName } from '../../lib/maskName'
 import { clsName } from '../../lib/report'
@@ -10,6 +11,8 @@ const blank = (): EmergencyContact => ({ name: '', relation: '', phone: '', is_p
 export default function StudentAdmin({
   students,
   profiles,
+  regs,
+  onCancelAllRegs,
   getProfile,
   onUnlock,
   onResetPassword,
@@ -17,6 +20,8 @@ export default function StudentAdmin({
 }: {
   students: Student[]
   profiles: StudentProfileView[]
+  regs: Registration[]
+  onCancelAllRegs: (id: string) => Promise<void>
   getProfile: (id: string) => StudentProfileView
   onUnlock: (id: string) => Promise<void>
   onResetPassword: (id: string) => Promise<void>
@@ -67,6 +72,7 @@ export default function StudentAdmin({
           <tbody>
             {list.map(s => {
               const p = getProfile(s.student_id)
+              const activeRegs = regs.filter(r => r.student_id === s.student_id && (r.status === 'enrolled' || r.status === 'waitlisted')).length
               return (
                 <tr key={s.student_id} className="align-top hover:bg-orange-50/40">
                   <td className="border-b border-slate-100 px-3 py-2 font-mono text-xs">{s.student_id}</td>
@@ -105,6 +111,18 @@ export default function StudentAdmin({
                       <button type="button" className="btn-ghost !py-1.5 !text-xs justify-start" onClick={() => openEdit(s.student_id)}>
                         <Plus className="h-3.5 w-3.5" />{locale === 'en' ? 'Edit contacts' : '編輯聯絡人'}
                       </button>
+                      {p.emergency_contacts.length > 0 && (
+                        <button type="button" className="btn-ghost !py-1.5 !text-xs justify-start text-rose-600"
+                          onClick={() => window.confirm(locale === 'en' ? `Remove all contacts of ${s.student_id}?` : `確定清空 ${s.name} 的所有聯絡人？`) && onSaveContacts(s.student_id, [])}>
+                          <UserMinus className="h-3.5 w-3.5" />{locale === 'en' ? 'Clear contacts' : '清空聯絡人'}
+                        </button>
+                      )}
+                      {activeRegs > 0 && (
+                        <button type="button" className="btn-ghost !py-1.5 !text-xs justify-start text-rose-600"
+                          onClick={() => window.confirm(locale === 'en' ? `Cancel all ${activeRegs} enrollment(s)?` : `確定取消 ${s.name} 的全部 ${activeRegs} 筆報名（含候補）？`) && onCancelAllRegs(s.student_id)}>
+                          <XCircle className="h-3.5 w-3.5" />{locale === 'en' ? `Cancel all (${activeRegs})` : `取消全部報名（${activeRegs}）`}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -147,9 +165,10 @@ export default function StudentAdmin({
               type="button"
               className="btn-primary"
               onClick={async () => {
-                const cleaned = draft.filter(c => c.name.trim() || c.phone.trim())
-                if (cleaned.length && !cleaned.some(c => c.is_primary)) cleaned[0].is_primary = true
-                await onSaveContacts(editId, cleaned)
+                const filled = draft.filter(c => c.name.trim() || c.phone.trim())
+                const issues = contactIssues(filled)
+                if (issues.length) { alert(issues[0]); return }
+                await onSaveContacts(editId, cleanContacts(filled))
                 setEditId(null)
               }}
             >

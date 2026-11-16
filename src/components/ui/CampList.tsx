@@ -52,7 +52,7 @@ export default function CampList(p: CampListProps) {
                     <span className={`badge-pill ${isSingle ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
                       {isSingle ? t('camp.singleDay') : t('camp.fullCourse')}
                     </span>
-                    <span className="badge-pill bg-sky-100 text-sky-800">{c.season === 'winter' ? t('nav.winter') : t('nav.summer')}</span>
+                    <span className="badge-pill bg-sky-100 text-sky-800">{c.season === 'winter' ? t('nav.winter') : c.season === 'holiday' ? t('nav.holiday') : t('nav.summer')}</span>
                     {c.has_sub_classes && (
                       <span className="badge-pill bg-violet-50 text-violet-700"><Layers className="h-3 w-3" />{locale === 'en' ? 'Sub-classes' : '需分班'}</span>
                     )}

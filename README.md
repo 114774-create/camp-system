@@ -29,5 +29,6 @@ npm i && npm test && npm run dev
 
 ## 第三階段（候補／分頁重構／互斥登入）部署注意
 1. 既有 Supabase 資料庫請**重新執行 `supabase/schema.sql`**（已寫成可重複執行：放寬 status 檢查、改建唯一索引、新增 `camp_admin_promote_waitlist`）。
-2. 前台分頁：營隊報名與首頁／個人資料與設定／我的報名狀態。
+2. 前台分頁：營隊報名與首頁／聯絡人資料與設定／我的報名狀態。
 3. 前後台登入互斥：後台登入會清除學生登入；學生登入會清除後台登入（`lib/session.ts`）。
+4. v3.2：請再執行一次 `supabase/schema.sql`（新增 `camp_contacts_valid` 電話檢核，並套用於學生與後台儲存聯絡人）。

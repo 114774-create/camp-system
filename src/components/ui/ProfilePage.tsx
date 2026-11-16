@@ -1,4 +1,4 @@
-// 分頁 B：個人資料與設定（緊急聯絡人 + 修改密碼，同一畫面完成）
+// 分頁 B：聯絡人資料與設定（緊急聯絡人 + 修改密碼，同一畫面完成）
 import { EmergencyContact, Student, StudentLoginResult, StudentProfileView } from '../../types'
 import { useI18n } from '../../lib/I18nContext'
 import ContactsPage from './ContactsPage'

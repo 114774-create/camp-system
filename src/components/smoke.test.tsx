@@ -9,6 +9,8 @@ import ProfilePage from './ui/ProfilePage'
 import CampList from './ui/CampList'
 import AppShell from './ui/AppShell'
 import CampForm from './ui/CampForm'
+import ContactsPage from './ui/ContactsPage'
+import R3Notice from './reports/R3Notice'
 import { emptyProfileView } from '../lib/auth'
 
 const camp = { id: 'a', term: 'T', season: 'summer', name: '桌遊營', attendance_mode: 'full_course', dates: ['2026-07-06', '2026-07-07'], start_time: '09:00', end_time: '12:00', allowed_grades: [1, 2, 3, 4, 5, 6], max_capacity: 1, ignore_time_conflict: false, allow_concurrent_with: [], has_sub_classes: false, sub_classes: [], location: '會議室', teacher: '王老師', notes: '' } as Camp
@@ -24,7 +26,7 @@ const noop = async () => ({ ok: true as const })
 describe('render smoke', () => {
   it('前台首頁：有教學、營隊清單顯示「額滿，排入候補」，且不含修改密碼欄位', () => {
     const html = wrap(<FrontPage students={[s1, s2]} camps={[camp]} regs={regs.slice(0, 1)} settings={null} loggedInStudentId="10102"
-      getProfile={id => ({ ...emptyProfileView(id), emergency_contacts: [{ name: 'a', relation: 'b', phone: '1', is_primary: true }] })}
+      getProfile={id => ({ ...emptyProfileView(id), emergency_contacts: [{ name: 'a', relation: 'b', phone: '0912345678', is_primary: true }] })}
       onLogin={async () => ({ ok: true })} onLogout={() => {}} onEnroll={noop} />)
     expect(html).toContain('家長與學生使用教學'); expect(html).toContain('額滿，排入候補'); expect(html).not.toContain('目前密碼')
   })
@@ -32,7 +34,7 @@ describe('render smoke', () => {
     const html = wrap(<StatusPage student={s2} camps={[camp]} regs={regs} settings={null} onCancel={noop} onLeave={noop} />)
     expect(html).toContain('候補中・第 1 順位'); expect(html).toContain('會議室'); expect(html).toContain('09:00'); expect(html).toContain('12:00')
   })
-  it('個人資料與設定：聯絡人與密碼在同一頁', () => {
+  it('聯絡人資料與設定：聯絡人與密碼在同一頁', () => {
     const html = wrap(<ProfilePage student={s1} profile={emptyProfileView('10101')} sessionPassword="" onSaveContacts={async () => ({ success: false, remaining_attempts: 5, is_locked: false, message: '' })} onChangePassword={async () => ({ success: false, remaining_attempts: 5, is_locked: false, message: '' })} />)
     expect(html).toContain('目前密碼'); expect(html).toContain('緊急聯絡人')
   })
@@ -40,12 +42,27 @@ describe('render smoke', () => {
     const html = wrap(<CampList students={[s1, s2]} camps={[camp]} regs={regs} onNew={() => {}} onEdit={() => {}} onDelete={() => {}} onAutoAssign={() => {}} onSetSubClass={() => {}} onPromote={noop} />)
     expect(html).toContain('候補名單'); expect(html).toContain('遞補轉正'); expect(html).toContain('disabled')
   })
-  it('導覽：登入後出現「我的報名狀態」「個人資料與設定」', () => {
+  it('導覽：登入後出現「我的報名狀態」「聯絡人資料與設定」', () => {
     const html = wrap(<AppShell tab="front" onTab={() => {}} isAdminAuthenticated={false} onAdminLogout={() => {}} studentLoggedIn>x</AppShell>)
-    expect(html).toContain('我的報名狀態'); expect(html).toContain('個人資料與設定'); expect(html).toContain('營隊報名與首頁')
+    expect(html).toContain('我的報名狀態'); expect(html).toContain('聯絡人資料與設定'); expect(html).toContain('營隊報名與首頁')
   })
   it('營隊表單：單日擇一時顯示「每一場次人數上限」', () => {
     const html = wrap(<CampForm initial={{ ...camp, attendance_mode: 'single_day_choice', group_id: 'g', dates: ['2026-12-05'] }} onSave={() => {}} onCancel={() => {}} />)
     expect(html).toContain('每一場次人數上限'); expect(html).toContain('儲存後將建立 1 個場次')
+  })
+  it('通知單：上半留存、裁切線在簽收回條上方', () => {
+    const html = wrap(<R3Notice students={[s1]} camps={[camp]} regs={regs.slice(0, 1)} profiles={[]} />)
+    expect(html).toContain('以上資料請家長留存'); expect(html).toContain('沿虛線剪下')
+    expect(html.indexOf('以上資料請家長留存')).toBeLessThan(html.indexOf('沿虛線剪下'))
+    expect(html.indexOf('沿虛線剪下')).toBeLessThan(html.indexOf('家長簽收回條'))
+  })
+  it('聯絡人頁：電話格式提示與「清空所有聯絡人」按鈕', () => {
+    const html = wrap(<ContactsPage student={s1} sessionPassword="" onSave={async () => ({ success: true } as any)}
+      profile={{ ...emptyProfileView('10101'), emergency_contacts: [{ name: '王OO', relation: '父', phone: '0923456781000', is_primary: true }] }} />)
+    expect(html).toContain('電話格式不正確'); expect(html).toContain('清空所有聯絡人')
+  })
+  it('營隊表單：寒／暑／假日三種類型', () => {
+    const html = wrap(<CampForm initial={null} onSave={() => {}} onCancel={() => {}} />)
+    expect(html).toContain('假日營')
   })
 })

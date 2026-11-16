@@ -45,6 +45,7 @@ export default function AppShell({
                   </span>
                   <span className="badge-pill bg-orange-100 text-orange-700">{t('nav.summer')}</span>
                   <span className="badge-pill bg-emerald-100 text-emerald-700">{t('nav.winter')}</span>
+            <span className="badge-pill bg-sky-100 text-sky-700">{t('nav.holiday')}</span>
                 </div>
               </div>
             </div>

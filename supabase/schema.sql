@@ -211,6 +211,15 @@ begin
   );
 end $$;
 
+-- 聯絡人電話格式：手機 09 開頭 10 碼，或市話 7 碼（允許連字號／空白／括號）
+create or replace function camp_contacts_valid(p jsonb) returns boolean
+language sql immutable as $$
+  select coalesce(bool_and(
+    regexp_replace(coalesce(c->>'phone', ''), '[\s\-()]', '', 'g') ~ '^(09[0-9]{8}|[0-9]{7})$'
+  ), true)
+  from jsonb_array_elements(coalesce(p, '[]'::jsonb)) c
+$$;
+
 -- ─── 學生更新密碼／緊急聯絡人（需驗證目前密碼）────────────
 
 create or replace function camp_update_student_profile(
@@ -230,6 +239,10 @@ begin
   end if;
 
   select * into r from camp_student_profiles where student_id = p_student_id;
+
+  if p_emergency_contacts is not null and not camp_contacts_valid(p_emergency_contacts) then
+    raise exception 'INVALID_PHONE';
+  end if;
 
   if p_new_password is not null and length(trim(p_new_password)) >= 4 then
     update camp_student_profiles
@@ -312,6 +325,9 @@ create or replace function camp_admin_set_contacts(
 returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 begin
   perform camp_assert_admin(p_admin_password);
+  if p_emergency_contacts is not null and not camp_contacts_valid(p_emergency_contacts) then
+    raise exception 'INVALID_PHONE';
+  end if;
   insert into camp_student_profiles (student_id, password_hash, failed_attempts, is_locked, emergency_contacts)
   values (p_student_id, camp_hash_password(p_student_id), 0, false, coalesce(p_emergency_contacts, '[]'::jsonb))
   on conflict (student_id) do update

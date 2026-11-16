@@ -13,15 +13,17 @@ export function emptyProfileView(studentId: string): StudentProfileView {
   }
 }
 
+import { isValidTwPhone } from './phone'
+
 export function hasValidEmergencyContacts(profile?: StudentProfileView | null): boolean {
   const list = profile?.emergency_contacts ?? []
-  return list.some(c => c.name.trim() && c.phone.trim())
+  return list.some(c => c.name.trim() && isValidTwPhone(c.phone))
 }
 
 export function primaryContact(profile?: StudentProfileView | null) {
   const list = profile?.emergency_contacts ?? []
-  return list.find(c => c.is_primary && c.name.trim() && c.phone.trim())
-    ?? list.find(c => c.name.trim() && c.phone.trim())
+  return list.find(c => c.is_primary && c.name.trim() && isValidTwPhone(c.phone))
+    ?? list.find(c => c.name.trim() && isValidTwPhone(c.phone))
     ?? null
 }
 

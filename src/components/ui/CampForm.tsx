@@ -91,6 +91,7 @@ export default function CampForm({ initial, onSave, onCancel }: CampFormProps) {
             <select className="input-field" value={c.season} onChange={e => set('season', e.target.value as Camp['season'])}>
               <option value="summer">{t('nav.summer')}</option>
               <option value="winter">{t('nav.winter')}</option>
+              <option value="holiday">{t('nav.holiday')}</option>
             </select>
           </label>
           <label className="grid gap-1.5 text-sm font-medium">{locale === 'en' ? 'Mode' : '報名模式'}
@@ -102,10 +103,10 @@ export default function CampForm({ initial, onSave, onCancel }: CampFormProps) {
         </div>
         {c.attendance_mode === 'single_day_choice' && (
           <div>
-            <label className="grid gap-1.5 text-sm font-medium">{locale === 'en' ? 'Session group ID' : '場次群組代碼'}
+            <label className="grid gap-1.5 text-sm font-medium">{locale === 'en' ? 'Session group ID (usually leave blank)' : '場次群組代碼（通常不用填，系統自動產生）'}
               <input className="input-field" value={c.group_id ?? ''} onChange={e => set('group_id', e.target.value)} placeholder={locale === 'en' ? 'Leave blank to auto-generate' : '可留空，系統自動產生'} />
             </label>
-            <Helper>{locale === 'en' ? 'Sessions in the same group: each student may join only one. Pick several dates below and they are split into one session per day automatically.' : '同一群組的場次，每位學生只能擇一參加。下方可一次選多個日期，儲存時會自動拆成「每天一個場次」。'}</Helper>
+            <Helper>{locale === 'en' ? 'Leave blank for a new camp — it is generated automatically and the dates below are split into one session per day. Only type a code to add a session to an existing group.' : '新增營隊請留空，系統會自動產生，並把下方選的多個日期拆成「每天一個場次」（同群組學生只能擇一）。只有要把新場次加入既有群組時，才需要填相同的代碼。'}</Helper>
           </div>
         )}
         <DateChipsPicker value={dates} onChange={setDates} label={locale === 'en' ? 'Camp dates' : '上課日期'} />

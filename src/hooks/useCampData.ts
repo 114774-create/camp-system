@@ -247,6 +247,17 @@ export function useCampData() {
     setProfiles(prev => prev.filter(p => p.student_id !== studentId))
   }
 
+  /** 後台：取消某學生所有有效報名（正取與候補），保留紀錄與取消時間 */
+  const adminCancelRegistrations = async (studentId: string) => {
+    const now = new Date().toISOString()
+    const next = regs
+      .filter(r => r.student_id === studentId && (r.status === 'enrolled' || r.status === 'waitlisted'))
+      .map(r => ({ ...r, status: 'cancelled' as const, cancelled_at: now }))
+    if (!next.length) return
+    await repo.upsertRegs(next)
+    setRegs(p => p.map(x => next.find(n => n.id === x.id) ?? x))
+  }
+
   /** 學生登入成功後：丟棄後台載入的全校個資，只保留該生自己的 */
   const keepOnlyProfile = (studentId: string) => setProfiles(prev => prev.filter(p => p.student_id === studentId))
 
@@ -254,7 +265,7 @@ export function useCampData() {
     students, camps, regs, profiles, settings, loading,
     getProfile, loginStudent, changeStudentPassword, saveEmergencyContacts,
     verifyAdmin, unlockStudent, resetStudentPassword, adminSaveContacts,
-    enroll, cancel, promoteWaitlist, keepOnlyProfile, requestLeave, setSubClass, autoAssign: runAutoAssign,
+    enroll, cancel, promoteWaitlist, adminCancelRegistrations, keepOnlyProfile, requestLeave, setSubClass, autoAssign: runAutoAssign,
     saveCamp, deleteCamp, saveSettings, reloadPublic, clearStudentPii, refreshAdminProfiles,
   }
 }

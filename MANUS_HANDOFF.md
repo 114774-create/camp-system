@@ -40,7 +40,7 @@
 ## 第三階段更新（候補、分頁重構、前後台互斥）
 
 **新增可改外觀的元件**（同樣只能改樣式與版面，不可動 props／邏輯）：
-`components/ui/GuideCard.tsx`（使用教學）、`ProfilePage.tsx` + `PasswordForm.tsx`（個人資料與設定）、`StatusPage.tsx`（我的報名狀態）、`Notice.tsx`（提示訊息）。
+`components/ui/GuideCard.tsx`（使用教學）、`ProfilePage.tsx` + `PasswordForm.tsx`（聯絡人資料與設定）、`StatusPage.tsx`（我的報名狀態）、`Notice.tsx`（提示訊息）。
 
 **新增鎖定檔案（不可修改）**：`lib/waitlist.ts`、`lib/session.ts`、`lib/assign.ts`（S 型分班）、`components/smoke.test.tsx`。
 
@@ -54,3 +54,10 @@
 ## v3.1：單日擇一自動拆場次
 - 新增鎖定檔案：`lib/sessions.ts`（`buildCamps`）。`CampForm` 的 `onSave` 現在傳出 `Camp[]`（單日擇一會拆成每天一筆），props 簽章不可再改。
 - 單日擇一時，表單的「每一場次人數上限」文字與下方「將建立 N 個場次」預覽必須保留。
+
+---
+## v3.2
+- 新增鎖定檔案：`lib/phone.ts`（電話檢核：手機 09 開頭 10 碼／市話 7 碼）。聯絡人表單的電話錯誤提示、「清空所有聯絡人」按鈕必須保留。
+- `components/reports/R3Notice.tsx` 版面已調整為「上半家長留存 + 裁切線 + 下半簽收回條」，維持鎖定，不可更動。
+- 營隊類型新增「假日營」(`season: 'holiday'`)；後台學生管理新增「清空聯絡人」「取消全部報名」。
+- 驗收：`npm test` 需 48 個以上測試通過。
