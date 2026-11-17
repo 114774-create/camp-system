@@ -24,6 +24,23 @@ create table if not exists camp_registrations (
   leave_reason text
 );
 
+-- ─── v4：教師點名 PIN（營隊資料表為公開可讀，PIN 欄位以欄位層級權限隱藏，見檔尾）───
+alter table camp_camps add column if not exists teacher_pin text;
+alter table camp_camps add column if not exists teacher_pin_failed int not null default 0;
+alter table camp_camps add column if not exists teacher_pin_locked_until timestamptz;
+alter table camp_camps drop constraint if exists camp_camps_teacher_pin_check;
+alter table camp_camps add constraint camp_camps_teacher_pin_check check (teacher_pin is null or teacher_pin ~ '^[0-9]{4}$');
+
+-- 教師點名紀錄（僅能透過 camp_teacher_* RPC 讀寫）
+create table if not exists camp_attendance (
+  camp_id text not null references camp_camps(id) on delete cascade,
+  student_id text not null,
+  attend_date date not null,
+  status text not null check (status in ('present','absent')),
+  marked_at timestamptz not null default now(),
+  primary key (camp_id, student_id, attend_date)
+);
+
 -- ─── 第三階段遷移（候補）：既有資料庫重跑本檔即可升級，可重複執行 ───
 alter table camp_registrations drop constraint if exists camp_registrations_status_check;
 alter table camp_registrations add constraint camp_registrations_status_check
@@ -74,6 +91,13 @@ create table if not exists camp_system_settings (
   updated_at timestamptz not null default now()
 );
 
+-- v4：全站緊急公告
+alter table camp_system_settings add column if not exists global_alert_message text not null default '';
+alter table camp_system_settings add column if not exists global_alert_active boolean not null default false;
+-- v4：忘記密碼（學號＋電話）專用的防暴力計數，與登入錯誤次數分開
+alter table camp_student_profiles add column if not exists reset_failed_attempts int not null default 0;
+alter table camp_student_profiles add column if not exists reset_locked_until timestamptz;
+
 -- ─── 密碼工具 ─────────────────────────────────────────────
 
 create or replace function camp_hash_password(p_plain text)
@@ -118,14 +142,18 @@ begin
       'id', 'default',
       'term_name', '115學年度夏令營',
       'registration_start_at', null,
-      'registration_end_at', null
+      'registration_end_at', null,
+      'global_alert_message', '',
+      'global_alert_active', false
     );
   end if;
   return jsonb_build_object(
     'id', r.id,
     'term_name', r.term_name,
     'registration_start_at', r.registration_start_at,
-    'registration_end_at', r.registration_end_at
+    'registration_end_at', r.registration_end_at,
+    'global_alert_message', r.global_alert_message,
+    'global_alert_active', r.global_alert_active
   );
 end $$;
 
@@ -211,11 +239,13 @@ begin
   );
 end $$;
 
--- 聯絡人電話格式：手機 09 開頭 10 碼，或市話 7 碼（允許連字號／空白／括號）
+-- 聯絡人檢核：姓名≥2字且僅中英文字母（英文名可含單一空格）；電話為 09XX-XXXXXX／09XXXXXXXX 或 0X-XXXXXXX
 create or replace function camp_contacts_valid(p jsonb) returns boolean
 language sql immutable as $$
   select coalesce(bool_and(
-    regexp_replace(coalesce(c->>'phone', ''), '[\s\-()]', '', 'g') ~ '^(09[0-9]{8}|[0-9]{7})$'
+    char_length(replace(coalesce(c->>'name', ''), ' ', '')) >= 2
+    and coalesce(c->>'name', '') ~ '^[\u3400-\u4dbf\u4e00-\u9fffA-Za-z]+( [\u3400-\u4dbf\u4e00-\u9fffA-Za-z]+)*$'
+    and regexp_replace(coalesce(c->>'phone', ''), '\s', '', 'g') ~ '^(09[0-9]{2}-?[0-9]{6}|0[2-8]-?[0-9]{7})$'
   ), true)
   from jsonb_array_elements(coalesce(p, '[]'::jsonb)) c
 $$;
@@ -271,9 +301,11 @@ returns jsonb language plpgsql security definer set search_path = public, extens
 declare
   settings jsonb;
   profiles jsonb;
+  pins jsonb;
 begin
   perform camp_assert_admin(p_admin_password);
   settings := camp_get_public_settings();
+  select coalesce(jsonb_object_agg(id, teacher_pin), '{}'::jsonb) into pins from camp_camps where teacher_pin is not null;
   select coalesce(jsonb_agg(jsonb_build_object(
     'student_id', student_id,
     'failed_attempts', failed_attempts,
@@ -286,7 +318,8 @@ begin
   return jsonb_build_object(
     'success', true,
     'settings', settings,
-    'profiles', profiles
+    'profiles', profiles,
+    'teacher_pins', pins
   );
 end $$;
 
@@ -335,12 +368,15 @@ begin
   return jsonb_build_object('success', true, 'emergency_contacts', coalesce(p_emergency_contacts, '[]'::jsonb));
 end $$;
 
+drop function if exists camp_admin_save_settings(text, text, timestamptz, timestamptz, text);
 create or replace function camp_admin_save_settings(
   p_admin_password text,
   p_term_name text,
   p_registration_start_at timestamptz,
   p_registration_end_at timestamptz,
-  p_new_admin_password text default null
+  p_new_admin_password text default null,
+  p_global_alert_message text default null,
+  p_global_alert_active boolean default null
 )
 returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 begin
@@ -354,24 +390,41 @@ begin
         then camp_hash_password(p_new_admin_password)
       else admin_password_hash
     end,
+    global_alert_message = coalesce(left(p_global_alert_message, 300), global_alert_message),
+    global_alert_active = coalesce(p_global_alert_active, global_alert_active),
     updated_at = now()
   where id = 'default';
   return camp_get_public_settings() || jsonb_build_object('success', true);
 end $$;
 
-create or replace function camp_admin_save_camp(p_admin_password text, p_camp jsonb)
+create or replace function camp_random_pin() returns text
+language sql volatile set search_path = public, extensions as $$
+  select lpad(((get_byte(b, 0) * 256 + get_byte(b, 1)) % 10000)::text, 4, '0')
+  from (select extensions.gen_random_bytes(2) as b) t
+$$;
+
+drop function if exists camp_admin_save_camp(text, jsonb);
+create or replace function camp_admin_save_camp(p_admin_password text, p_camp jsonb, p_teacher_pin text default null)
 returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare
   cid text;
+  pin text;
 begin
   perform camp_assert_admin(p_admin_password);
   cid := p_camp->>'id';
   if cid is null or length(cid) = 0 then
     raise exception 'INVALID_CAMP';
   end if;
-  insert into camp_camps (id, data) values (cid, p_camp)
-  on conflict (id) do update set data = excluded.data;
-  return jsonb_build_object('success', true, 'id', cid);
+  if p_teacher_pin is not null and p_teacher_pin !~ '^[0-9]{4}$' then
+    raise exception 'INVALID_PIN';
+  end if;
+  insert into camp_camps (id, data, teacher_pin)
+  values (cid, p_camp - 'teacher_pin', coalesce(p_teacher_pin, camp_random_pin()))
+  on conflict (id) do update
+    set data = excluded.data,
+        teacher_pin = coalesce(p_teacher_pin, camp_camps.teacher_pin, camp_random_pin());
+  select teacher_pin into pin from camp_camps where id = cid;
+  return jsonb_build_object('success', true, 'id', cid, 'teacher_pin', pin);
 end $$;
 
 create or replace function camp_admin_delete_camp(p_admin_password text, p_camp_id text)
@@ -397,6 +450,182 @@ begin
   return jsonb_build_object('success', true);
 end $$;
 
+-- ═══ v4：忘記密碼（學號 + 主要聯絡人電話）══════════════════
+-- 注意：失敗時用 return 而非 raise，這樣失敗計次才不會隨交易一起被回滾。
+create or replace function camp_reset_student_password(p_id text, p_phone text, p_new_password text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare
+  r camp_student_profiles%rowtype;
+  ph text;
+  fails int;
+  generic constant text := '驗證失敗：學號或主要聯絡人電話不符。連續錯誤多次將暫停此功能 30 分鐘。';
+begin
+  if p_id is null or length(trim(p_id)) = 0 or p_new_password is null or length(trim(p_new_password)) < 4 then
+    return jsonb_build_object('success', false, 'message', '請輸入學號與電話，且新密碼至少 4 碼');
+  end if;
+
+  select * into r from camp_student_profiles where student_id = p_id for update;
+  if not found then
+    return jsonb_build_object('success', false, 'message', generic);  -- 不透露學號是否存在
+  end if;
+
+  if r.reset_locked_until is not null and r.reset_locked_until > now() then
+    return jsonb_build_object('success', false, 'locked', true,
+      'message', '嘗試次數過多，此功能暫停 30 分鐘，請稍後再試或洽學校行政人員');
+  end if;
+
+  -- 主要聯絡人電話（沒有標記主要者，取第一位）
+  select regexp_replace(coalesce(c->>'phone', ''), '[^0-9]', '', 'g') into ph
+  from jsonb_array_elements(r.emergency_contacts) with ordinality as t(c, n)
+  order by (case when c->>'is_primary' = 'true' then 0 else 1 end), n
+  limit 1;
+
+  if ph is not null and ph <> '' and ph = regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g') then
+    update camp_student_profiles
+      set password_hash = camp_hash_password(p_new_password),
+          is_locked = false, failed_attempts = 0,
+          reset_failed_attempts = 0, reset_locked_until = null,
+          updated_at = now()
+      where student_id = p_id;
+    return jsonb_build_object('success', true, 'message', '密碼已重設，帳號已解鎖，請用新密碼登入');
+  end if;
+
+  fails := r.reset_failed_attempts + 1;
+  if fails >= 5 then
+    update camp_student_profiles set reset_failed_attempts = 0, reset_locked_until = now() + interval '30 minutes' where student_id = p_id;
+  else
+    update camp_student_profiles set reset_failed_attempts = fails where student_id = p_id;
+  end if;
+  return jsonb_build_object('success', false, 'message', generic);
+end $$;
+
+-- ═══ v4：手足帳號綁定（驗證兩個帳號；B 沒有聯絡人時，自動複製 A 的聯絡人）═══
+create or replace function camp_bind_sibling(p_a_id text, p_a_password text, p_b_id text, p_b_password text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare
+  la jsonb; lb jsonb; ca jsonb; cb jsonb;
+  copied boolean := false;
+begin
+  if p_a_id is null or p_b_id is null or length(trim(p_b_id)) = 0 or p_a_id = p_b_id then
+    return jsonb_build_object('success', false, 'message', '請輸入另一位學生的學號');
+  end if;
+  la := camp_verify_student_login(p_a_id, p_a_password);
+  if coalesce((la->>'success')::boolean, false) is not true then
+    return la || jsonb_build_object('who', 'A');
+  end if;
+  lb := camp_verify_student_login(p_b_id, p_b_password);
+  if coalesce((lb->>'success')::boolean, false) is not true then
+    return lb || jsonb_build_object('who', 'B');
+  end if;
+  ca := coalesce(la->'emergency_contacts', '[]'::jsonb);
+  cb := coalesce(lb->'emergency_contacts', '[]'::jsonb);
+  if jsonb_array_length(cb) = 0 and jsonb_array_length(ca) > 0 and camp_contacts_valid(ca) then
+    update camp_student_profiles set emergency_contacts = ca, updated_at = now() where student_id = p_b_id;
+    cb := ca;
+    copied := true;
+  end if;
+  return jsonb_build_object('success', true, 'copied', copied, 'emergency_contacts', cb);
+end $$;
+
+-- ═══ v4：教師數位點名簿（以營隊 PIN 驗證；連續錯 8 次鎖 15 分鐘）═══
+create or replace function camp_teacher_check(p_camp_id text, p_pin text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare
+  r record;
+begin
+  select teacher_pin, teacher_pin_failed, teacher_pin_locked_until into r
+    from camp_camps where id = p_camp_id for update;
+  if not found or r.teacher_pin is null then
+    return jsonb_build_object('ok', false, 'message', '查無此營隊，或尚未設定教師 PIN');
+  end if;
+  if r.teacher_pin_locked_until is not null and r.teacher_pin_locked_until > now() then
+    return jsonb_build_object('ok', false, 'locked', true, 'message', 'PIN 錯誤次數過多，請 15 分鐘後再試');
+  end if;
+  if p_pin is not null and p_pin = r.teacher_pin then
+    if r.teacher_pin_failed > 0 or r.teacher_pin_locked_until is not null then
+      update camp_camps set teacher_pin_failed = 0, teacher_pin_locked_until = null where id = p_camp_id;
+    end if;
+    return jsonb_build_object('ok', true);
+  end if;
+  if r.teacher_pin_failed + 1 >= 8 then
+    update camp_camps set teacher_pin_failed = 0, teacher_pin_locked_until = now() + interval '15 minutes' where id = p_camp_id;
+    return jsonb_build_object('ok', false, 'locked', true, 'message', 'PIN 錯誤次數過多，已暫停 15 分鐘');
+  end if;
+  update camp_camps set teacher_pin_failed = teacher_pin_failed + 1 where id = p_camp_id;
+  return jsonb_build_object('ok', false, 'message', format('PIN 錯誤（尚可嘗試 %s 次）', 8 - (r.teacher_pin_failed + 1)));
+end $$;
+
+create or replace function camp_teacher_get_roster(p_camp_id text, p_pin text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare
+  chk jsonb; camp jsonb; roster jsonb; marks jsonb;
+begin
+  chk := camp_teacher_check(p_camp_id, p_pin);
+  if coalesce((chk->>'ok')::boolean, false) is not true then
+    return jsonb_build_object('success', false, 'message', chk->>'message', 'locked', coalesce((chk->>'locked')::boolean, false));
+  end if;
+  select data into camp from camp_camps where id = p_camp_id;
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'student_id', student_id, 'assigned_sub_class', assigned_sub_class, 'leave_dates', to_jsonb(leave_dates)
+    ) order by student_id), '[]'::jsonb) into roster
+    from camp_registrations where camp_id = p_camp_id and status = 'enrolled';
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'student_id', student_id, 'date', to_char(attend_date, 'YYYY-MM-DD'), 'status', status
+    )), '[]'::jsonb) into marks
+    from camp_attendance where camp_id = p_camp_id;
+  return jsonb_build_object('success', true, 'camp', camp, 'roster', roster, 'marks', marks);
+end $$;
+
+-- p_status：'present' 簽到／'absent' 缺席／null 清除
+create or replace function camp_teacher_mark(p_camp_id text, p_pin text, p_student_id text, p_date date, p_status text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare
+  chk jsonb;
+begin
+  chk := camp_teacher_check(p_camp_id, p_pin);
+  if coalesce((chk->>'ok')::boolean, false) is not true then
+    return jsonb_build_object('success', false, 'message', chk->>'message');
+  end if;
+  if p_status is not null and p_status not in ('present', 'absent') then
+    return jsonb_build_object('success', false, 'message', '無效的點名狀態');
+  end if;
+  if not exists (select 1 from camp_camps where id = p_camp_id and (data->'dates') ? to_char(p_date, 'YYYY-MM-DD')) then
+    return jsonb_build_object('success', false, 'message', '此日期不在營隊上課日期內');
+  end if;
+  if not exists (select 1 from camp_registrations where camp_id = p_camp_id and student_id = p_student_id and status = 'enrolled') then
+    return jsonb_build_object('success', false, 'message', '此學生不在報名名單中');
+  end if;
+  if p_status is null then
+    delete from camp_attendance where camp_id = p_camp_id and student_id = p_student_id and attend_date = p_date;
+  else
+    insert into camp_attendance (camp_id, student_id, attend_date, status)
+    values (p_camp_id, p_student_id, p_date, p_status)
+    on conflict (camp_id, student_id, attend_date) do update set status = excluded.status, marked_at = now();
+  end if;
+  return jsonb_build_object('success', true);
+end $$;
+
+-- 既有營隊補上 PIN
+update camp_camps set teacher_pin = camp_random_pin() where teacher_pin is null;
+
+-- ═══ v4：夏令營六年級防線（以學號首碼＝年級判斷；前端 validateRegistration 為主、此為資料庫備援）═══
+create or replace function camp_block_graduating() returns trigger language plpgsql as $$
+declare
+  d jsonb;
+begin
+  if new.status in ('enrolled', 'waitlisted') and (tg_op = 'INSERT' or old.status = 'cancelled') then
+    select data into d from camp_camps where id = new.camp_id;
+    if left(new.student_id, 1) = '6'
+       and (coalesce(d->>'season', '') = 'summer' or coalesce(d->>'term', '') like '%夏令營%') then
+      raise exception 'GRADUATING_BLOCKED';
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists trg_camp_block_graduating on camp_registrations;
+create trigger trg_camp_block_graduating before insert or update on camp_registrations
+  for each row execute function camp_block_graduating();
+
 -- ─── Seed（後台預設密碼僅以雜湊寫入資料庫；請勿把明文放到前端）──
 -- 預設後台密碼：學年度西元四碼（與營隊檔期年份相同）。上線後請立刻於後台修改。
 insert into camp_system_settings (id, admin_password_hash, registration_start_at, registration_end_at, term_name)
@@ -414,6 +643,7 @@ alter table camp_camps enable row level security;
 alter table camp_registrations enable row level security;
 alter table camp_student_profiles enable row level security;
 alter table camp_system_settings enable row level security;
+alter table camp_attendance enable row level security;
 
 -- 移除舊的全開政策（若存在）
 drop policy if exists "public rw camp_camps" on camp_camps;
@@ -439,10 +669,21 @@ grant execute on function camp_verify_admin_and_fetch_all(text) to anon, authent
 grant execute on function camp_admin_unlock_student(text, text) to anon, authenticated;
 grant execute on function camp_admin_reset_student_password(text, text) to anon, authenticated;
 grant execute on function camp_admin_set_contacts(text, text, jsonb) to anon, authenticated;
-grant execute on function camp_admin_save_settings(text, text, timestamptz, timestamptz, text) to anon, authenticated;
-grant execute on function camp_admin_save_camp(text, jsonb) to anon, authenticated;
+grant execute on function camp_admin_save_settings(text, text, timestamptz, timestamptz, text, text, boolean) to anon, authenticated;
+grant execute on function camp_admin_save_camp(text, jsonb, text) to anon, authenticated;
+grant execute on function camp_reset_student_password(text, text, text) to anon, authenticated;
+grant execute on function camp_bind_sibling(text, text, text, text) to anon, authenticated;
+grant execute on function camp_teacher_get_roster(text, text) to anon, authenticated;
+grant execute on function camp_teacher_mark(text, text, text, date, text) to anon, authenticated;
+-- 內部輔助函式不對外開放
+revoke all on function camp_teacher_check(text, text) from public, anon, authenticated;
+revoke all on function camp_random_pin() from public, anon, authenticated;
 grant execute on function camp_admin_delete_camp(text, text) to anon, authenticated;
 
 revoke all on table camp_student_profiles from anon, authenticated;
 revoke all on table camp_system_settings from anon, authenticated;
 revoke insert, update, delete on table camp_camps from anon, authenticated;
+revoke all on table camp_attendance from anon, authenticated;
+-- 營隊表公開可讀，但只開放 id、data 兩欄；teacher_pin 等欄位 anon 讀不到（前端請勿用 select('*')）
+revoke select on table camp_camps from anon, authenticated;
+grant select (id, data) on table camp_camps to anon, authenticated;

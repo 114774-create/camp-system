@@ -61,3 +61,9 @@
 - `components/reports/R3Notice.tsx` 版面已調整為「上半家長留存 + 裁切線 + 下半簽收回條」，維持鎖定，不可更動。
 - 營隊類型新增「假日營」(`season: 'holiday'`)；後台學生管理新增「清空聯絡人」「取消全部報名」。
 - 驗收：`npm test` 需 48 個以上測試通過。
+
+---
+## v4（解除鎖定層的七項進階功能）
+新增檔案（邏輯，不可更動）：`lib/phone.ts`（姓名／電話嚴格正則）、`lib/pin.ts`、`lib/route.ts`、`lib/rollcall.ts`、`lib/siblings.ts`、`data/repo.test.ts`。
+新增 UI（可改外觀，不可動 props／邏輯）：`ui/AlertBanner.tsx`、`ui/SiblingBar.tsx`、`ui/ForgotPasswordPanel.tsx`、`teacher/TeacherRollCall.tsx`（手機直式，簽到／缺席按鈕維持超大尺寸）。
+驗收：`npm test` ≥ 84 個測試通過、`npm run build` 無錯誤。

@@ -32,3 +32,10 @@ npm i && npm test && npm run dev
 2. 前台分頁：營隊報名與首頁／聯絡人資料與設定／我的報名狀態。
 3. 前後台登入互斥：後台登入會清除學生登入；學生登入會清除後台登入（`lib/session.ts`）。
 4. v3.2：請再執行一次 `supabase/schema.sql`（新增 `camp_contacts_valid` 電話檢核，並套用於學生與後台儲存聯絡人）。
+
+## v4 部署注意（務必閱讀）
+1. **重新執行 `supabase/schema.sql`**（可重複執行）。新增：教師 PIN 與點名表、`camp_reset_student_password`、`camp_bind_sibling`、`camp_teacher_*`、公告欄位、聯絡人姓名／電話檢核、夏令營六年級資料庫備援（以學號首碼 `6` 判斷）。
+2. 舊簽章的 `camp_admin_save_settings`／`camp_admin_save_camp` 會被自動移除並以新版取代。
+3. **營隊表（`camp_camps`）現在只開放 `id`、`data` 兩欄給匿名使用者**，以隱藏 `teacher_pin`。程式請勿對該表使用 `select('*')`。
+4. 教師點名連結：`https://你的網址/teacher-rollcall/<營隊ID>`（後台營隊卡片可一鍵複製），PIN 同樣顯示於卡片。單頁應用需要路由改寫：已附 `vercel.json`；Netlify 請加 `/* /index.html 200`。
+5. 電話規則：手機 `09XX-XXXXXX`／`09XXXXXXXX`、市話 `0X-XXXXXXX`（區碼 2～8）。**不再接受單純 7 碼市話**；舊資料中不符者需重新填寫才能報名。

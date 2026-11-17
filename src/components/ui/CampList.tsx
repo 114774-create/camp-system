@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { ArrowUpCircle, Hourglass, Layers, Pencil, Plus, Trash2, Users, Wand2 } from 'lucide-react'
+import { ArrowUpCircle, Copy, Hourglass, KeyRound, Layers, Pencil, Plus, Trash2, Users, Wand2 } from 'lucide-react'
 import { Camp, Registration, Student } from '../../types'
 import { campLabel, enrolledJoin } from '../../lib/report'
 import { useI18n } from '../../lib/I18nContext'
 import { canPromote, waitlistOf } from '../../lib/waitlist'
 import { VResult } from '../../lib/validate'
+import { teacherLink } from '../../lib/route'
 import Notice from './Notice'
 
 export interface CampListProps {
@@ -13,6 +14,10 @@ export interface CampListProps {
   onAutoAssign: (campId: string) => void; onSetSubClass: (regId: string, sc: string) => void
   /** 候補遞補轉正（後台手動） */
   onPromote: (regId: string) => Promise<VResult>
+  /** 一鍵複製（帶入設定、清空上課日期，開啟新增模式） */
+  onDuplicate: (c: Camp) => void
+  /** camp_id → 教師點名 PIN */
+  teacherPins: Record<string, string>
 }
 
 function capacityTone(n: number, max: number) {
@@ -24,6 +29,8 @@ function capacityTone(n: number, max: number) {
 export default function CampList(p: CampListProps) {
   const { t, locale } = useI18n()
   const [wmsg, setWmsg] = useState(''), [wok, setWok] = useState(false)
+  const [copied, setCopied] = useState('')
+  const copyLink = (id: string) => { navigator.clipboard?.writeText(teacherLink(id)).then(() => { setCopied(id); setTimeout(() => setCopied(''), 1500) }) }
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -59,8 +66,16 @@ export default function CampList(p: CampListProps) {
                   </div>
                   <h3 className="font-display text-lg font-bold">{campLabel(c, locale)}</h3>
                   <p className="mt-1 text-sm text-slate-500">{c.dates.join('、')} · {c.start_time}-{c.end_time}</p>
+                  {p.teacherPins[c.id] && (
+                    <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                      <KeyRound className="h-3.5 w-3.5" aria-hidden />{locale === 'en' ? 'Roll-call PIN' : '教師點名 PIN'}
+                      <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-sm font-bold text-slate-700">{p.teacherPins[c.id]}</code>
+                      <button type="button" className="text-sky-700 underline" onClick={() => copyLink(c.id)}>{copied === c.id ? (locale === 'en' ? 'Copied' : '已複製') : (locale === 'en' ? 'Copy link' : '複製點名連結')}</button>
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 gap-2">
+                  <button type="button" onClick={() => p.onDuplicate(c)} className="btn-ghost !px-3 !py-2"><Copy className="h-4 w-4" />{locale === 'en' ? 'Duplicate' : '一鍵複製'}</button>
                   <button type="button" onClick={() => p.onEdit(c)} className="btn-ghost !px-3 !py-2"><Pencil className="h-4 w-4" />{locale === 'en' ? 'Edit' : '編輯'}</button>
                   <button
                     type="button"

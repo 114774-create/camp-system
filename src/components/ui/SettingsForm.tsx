@@ -3,6 +3,7 @@ import { Save } from 'lucide-react'
 import { PublicSettings } from '../../types'
 import { fromDatetimeLocalValue, toDatetimeLocalValue } from '../../lib/time'
 import { useI18n } from '../../lib/I18nContext'
+import AlertBanner from './AlertBanner'
 
 export default function SettingsForm({
   settings,
@@ -61,6 +62,18 @@ export default function SettingsForm({
             onChange={e => setS({ ...s, registration_end_at: fromDatetimeLocalValue(e.target.value) })}
           />
         </label>
+        <fieldset className="grid gap-2 rounded-xl border border-red-200 bg-red-50/50 p-3">
+          <legend className="px-1 text-sm font-semibold text-red-700">{locale === 'en' ? 'Site-wide emergency banner' : '全站緊急公告（跑馬燈）'}</legend>
+          <label className="inline-flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" className="accent-red-600" checked={s.global_alert_active} onChange={e => setS({ ...s, global_alert_active: e.target.checked })} />
+            {locale === 'en' ? 'Show banner on every page' : '啟用公告（顯示在所有頁面最上方）'}
+          </label>
+          <label className="grid gap-1 text-sm font-medium">
+            {locale === 'en' ? 'Message (max 300 chars)' : '公告內容（最多 300 字，例如：因颱風停課通知）'}
+            <textarea className="input-field min-h-[5rem]" maxLength={300} value={s.global_alert_message} onChange={e => setS({ ...s, global_alert_message: e.target.value })} />
+          </label>
+          <AlertBanner message={s.global_alert_message} active={s.global_alert_active} />
+        </fieldset>
         <button
           type="button"
           className="btn-primary justify-self-start"

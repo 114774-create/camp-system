@@ -4,6 +4,7 @@ import { Camp } from '../../types'
 import DateChipsPicker from './DateChipsPicker'
 import { useI18n } from '../../lib/I18nContext'
 import { buildCamps } from '../../lib/sessions'
+import { generatePin } from '../../lib/pin'
 import { md } from '../../lib/validate'
 
 export interface CampFormProps { initial: Camp | null; onSave: (camps: Camp[]) => void | Promise<void>; onCancel: () => void }
@@ -45,7 +46,7 @@ function StepCard({ step, title, children }: { step: number; title: string; chil
 
 export default function CampForm({ initial, onSave, onCancel }: CampFormProps) {
   const { t, locale } = useI18n()
-  const [c, setC] = useState<Camp>(initial ?? BLANK)
+  const [c, setC] = useState<Camp>(initial ?? { ...BLANK, teacher_pin: generatePin() })
   const [dates, setDates] = useState<string[]>(c.dates)
   const [sub, setSub] = useState(subToText(c))
   const [concurrent, setConcurrent] = useState((c.allow_concurrent_with ?? []).join(','))
@@ -68,7 +69,7 @@ export default function CampForm({ initial, onSave, onCancel }: CampFormProps) {
     <div className="grid max-w-2xl gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="section-title">{initial ? (locale === 'en' ? 'Edit camp' : '編輯營隊') : (locale === 'en' ? 'New camp' : '新增營隊')}</h2>
+          <h2 className="section-title">{initial?.id ? (locale === 'en' ? 'Edit camp' : '編輯營隊') : (initial ? (locale === 'en' ? 'New camp (from copy)' : '新增營隊（由複製帶入，請重新選擇上課日期）') : (locale === 'en' ? 'New camp' : '新增營隊'))}</h2>
         </div>
         <button type="button" onClick={onCancel} className="btn-ghost">
           <ArrowLeft className="h-4 w-4" />
@@ -134,6 +135,13 @@ export default function CampForm({ initial, onSave, onCancel }: CampFormProps) {
         <label className="grid gap-1.5 text-sm font-medium">{locale === 'en' ? 'Notes' : '自備物品／注意事項'}
           <input className="input-field" value={c.notes} onChange={e => set('notes', e.target.value)} />
         </label>
+        <div>
+          <label className="grid gap-1.5 text-sm font-medium max-w-[12rem]">{locale === 'en' ? 'Teacher roll-call PIN (4 digits)' : '教師點名 PIN（4 碼）'}
+            <input className="input-field font-mono tracking-widest" inputMode="numeric" maxLength={4} value={c.teacher_pin ?? ''}
+              onChange={e => set('teacher_pin', e.target.value.replace(/\D/g, ''))} />
+          </label>
+          <Helper>{locale === 'en' ? 'Teachers open /teacher-rollcall/<camp id> on their phone and enter this PIN — no admin password needed. Auto-generated; you may change it.' : '授課教師用手機開啟「點名連結」並輸入此 PIN，不需總後台密碼。系統自動產生，也可自行修改；單日擇一拆出的各場次會共用同一組 PIN。'}</Helper>
+        </div>
       </StepCard>
 
       <StepCard step={2} title={locale === 'en' ? 'Grades & capacity' : '年級限制與名額設定'}>

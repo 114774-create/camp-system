@@ -1,13 +1,14 @@
 // 分頁 A：營隊報名與首頁（教學 + 登入 + 可報名營隊）。密碼修改已移至「聯絡人資料與設定」，報名狀態已移至「我的報名狀態」。
 import { useState } from 'react'
 import { AlertCircle, IdCard, LogOut, Sparkles, Ticket, UserRound } from 'lucide-react'
-import { Camp, Registration, Student, StudentProfileView, PublicSettings } from '../../types'
-import { BtnKind, buttonState, canCancelOrEnroll, md, validateRegistration, VResult } from '../../lib/validate'
+import { Camp, Registration, ResetPasswordResult, Student, StudentProfileView, PublicSettings } from '../../types'
+import { BtnKind, buttonState, canCancelOrEnroll, GRADUATE_MESSAGE, isSummerCamp, md, validateRegistration, VResult } from '../../lib/validate'
 import { campLabel, clsName } from '../../lib/report'
 import { displayStudentName } from '../../lib/maskName'
 import { enrolledCount, waitlistOf } from '../../lib/waitlist'
 import { useI18n } from '../../lib/I18nContext'
 import GuideCard from './GuideCard'
+import ForgotPasswordPanel from './ForgotPasswordPanel'
 import Notice from './Notice'
 
 export interface FrontPageProps {
@@ -22,6 +23,8 @@ export interface FrontPageProps {
   onLogout: () => void
   onEnroll: (s: Student, c: Camp) => Promise<VResult>
   onNavigate?: (tab: 'status' | 'profile') => void
+  /** 忘記密碼：學號 + 主要聯絡人電話 */
+  onResetPassword: (studentId: string, phone: string, newPassword: string) => Promise<ResetPasswordResult>
 }
 
 function capacityTone(n: number, max: number) {
@@ -37,6 +40,7 @@ export default function FrontPage(p: FrontPageProps) {
   const [pwd, setPwd] = useState('')
   const [msg, setMsg] = useState('')
   const [msgOk, setMsgOk] = useState(false)
+  const [showForgot, setShowForgot] = useState(false)
 
   const stu = p.students.find(s => s.student_id === (p.loggedInStudentId || sid))
   const revealed = !!p.loggedInStudentId && p.loggedInStudentId === stu?.student_id
@@ -52,6 +56,7 @@ export default function FrontPage(p: FrontPageProps) {
     const m: Partial<Record<BtnKind, string>> = {
       enroll: t('camp.enroll'), waitlist: t('camp.waitlistBtn'), grade: t('camp.gradeMismatch'),
       full: t('camp.fullBtn'), already: t('camp.already'), waitlisted: t('camp.waitlisted'),
+      graduate: 'Grade 6 graduates cannot enroll',
     }
     return m[kind] ?? zh
   }
@@ -68,6 +73,7 @@ export default function FrontPage(p: FrontPageProps) {
           <div className="min-w-0">
             <p className="mb-2 font-display text-sm font-bold uppercase tracking-wider text-orange-600">{t('pass.title')}</p>
             {!revealed ? (
+              <div>
               <div className="grid gap-2 sm:grid-cols-3">
                 <label className="grid gap-1 text-xs font-medium text-slate-500">
                   {t('pass.class')}
@@ -99,6 +105,10 @@ export default function FrontPage(p: FrontPageProps) {
                   </div>
                 </label>
               </div>
+              <button type="button" className="mt-2 text-xs font-medium text-sky-700 underline" onClick={() => setShowForgot(v => !v)}>
+                {locale === 'en' ? 'Forgot password / locked account?' : '忘記密碼／帳號解鎖'}
+              </button>
+              </div>
             ) : stu && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-amber-100 bg-white/70 px-3 py-2 text-sm">
                 <span className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
@@ -116,6 +126,8 @@ export default function FrontPage(p: FrontPageProps) {
         </div>
       </section>
 
+      {!revealed && showForgot && <ForgotPasswordPanel onReset={p.onResetPassword} />}
+
       <Notice msg={msg} ok={msgOk} onClose={() => setMsg('')} />
 
       {!revealed && (
@@ -128,6 +140,12 @@ export default function FrontPage(p: FrontPageProps) {
       {revealed && stu && (
         <section>
           <h2 className="section-title mb-3 flex items-center gap-2"><Sparkles className="h-5 w-5 text-orange-500" />{t('camp.list')}</h2>
+          {stu.grade === 6 && p.camps.some(isSummerCamp) && (
+            <p role="note" className="mb-3 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              {locale === 'en' ? 'Graduating Grade 6 students cannot enroll in summer camps.' : `${GRADUATE_MESSAGE}（夏令營採舊學年資料，其他類型的營隊仍可報名）。`}
+            </p>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             {p.camps.map(c => {
               const v = validateRegistration(stu, c, c.dates[0], p.regs, p.camps, { profile: profile ?? undefined, settings: p.settings })

@@ -8,6 +8,7 @@ import { validateRegistration, VResult, canCancelOrEnroll, canRequestLeave } fro
 import { autoAssign } from '../lib/assign'
 import { canPromote } from '../lib/waitlist'
 import { emptyProfileView, readAdminToken } from '../lib/auth'
+import type { BindSiblingResult, ResetPasswordResult } from '../types'
 
 const repo = getRepo()
 
@@ -19,6 +20,8 @@ export function useCampData() {
   const [profiles, setProfiles] = useState<StudentProfileView[]>([])
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [loading, setLoading] = useState(true)
+  /** camp_id → 教師 PIN（只在後台驗證後才有） */
+  const [teacherPins, setTeacherPins] = useState<Record<string, string>>({})
 
   const reloadPublic = useCallback(async () => {
     const [s, c, r, st] = await Promise.all([
@@ -106,6 +109,7 @@ export function useCampData() {
     const bundle = await repo.verifyAdminAndFetchAll(adminPassword)
     setProfiles(bundle.profiles)
     setSettings(bundle.settings)
+    setTeacherPins(bundle.teacher_pins)
     return bundle
   }
 
@@ -114,6 +118,7 @@ export function useCampData() {
     const bundle = await repo.verifyAdminAndFetchAll(pwd)
     setProfiles(bundle.profiles)
     setSettings(bundle.settings)
+    setTeacherPins(bundle.teacher_pins)
     return bundle
   }
 
@@ -216,14 +221,17 @@ export function useCampData() {
   }
 
   const saveCamp = async (c: Camp) => {
-    await repo.adminSaveCamp(requireAdminPassword(), c)
-    setCamps(p => p.some(x => x.id === c.id) ? p.map(x => x.id === c.id ? c : x) : [...p, c])
+    const saved = await repo.adminSaveCamp(requireAdminPassword(), c)
+    const { teacher_pin: _pin, ...pub } = c          // 公開狀態中不保留 PIN
+    setCamps(p => p.some(x => x.id === c.id) ? p.map(x => x.id === c.id ? pub : x) : [...p, pub])
+    if (saved.teacher_pin) setTeacherPins(p => ({ ...p, [c.id]: saved.teacher_pin! }))
   }
 
   const deleteCamp = async (id: string) => {
     await repo.adminDeleteCamp(requireAdminPassword(), id)
     setCamps(p => p.filter(x => x.id !== id))
     setRegs(p => p.filter(r => r.camp_id !== id))
+    setTeacherPins(p => { const { [id]: _gone, ...rest } = p; return rest })
   }
 
   const saveSettings = async (
@@ -235,6 +243,8 @@ export function useCampData() {
       registration_start_at: s.registration_start_at,
       registration_end_at: s.registration_end_at,
       new_admin_password: newAdminPassword,
+      global_alert_message: s.global_alert_message,
+      global_alert_active: s.global_alert_active,
     })
     setSettings(next)
   }
@@ -258,6 +268,21 @@ export function useCampData() {
     setRegs(p => p.map(x => next.find(n => n.id === x.id) ?? x))
   }
 
+  /** 手足綁定：驗證兩個帳號；B 尚無聯絡人時由伺服器複製 A 的聯絡人 */
+  const addSibling = async (a: { id: string; password: string }, b: { id: string; password: string }): Promise<BindSiblingResult> => {
+    const r = await repo.bindSibling(a, b)
+    if (r.success) {
+      upsertLocalProfile({ student_id: b.id, failed_attempts: 0, is_locked: false, emergency_contacts: r.emergency_contacts })
+    } else if (r.is_locked && r.who === 'B') {
+      upsertLocalProfile({ student_id: b.id, failed_attempts: 5, is_locked: true, emergency_contacts: getProfile(b.id).emergency_contacts })
+    }
+    return r
+  }
+
+  /** 忘記密碼：學號 + 主要聯絡人電話 */
+  const resetPasswordByPhone = (studentId: string, phone: string, newPassword: string): Promise<ResetPasswordResult> =>
+    repo.resetPasswordByPhone(studentId.trim(), phone, newPassword)
+
   /** 學生登入成功後：丟棄後台載入的全校個資，只保留該生自己的 */
   const keepOnlyProfile = (studentId: string) => setProfiles(prev => prev.filter(p => p.student_id === studentId))
 
@@ -265,7 +290,7 @@ export function useCampData() {
     students, camps, regs, profiles, settings, loading,
     getProfile, loginStudent, changeStudentPassword, saveEmergencyContacts,
     verifyAdmin, unlockStudent, resetStudentPassword, adminSaveContacts,
-    enroll, cancel, promoteWaitlist, adminCancelRegistrations, keepOnlyProfile, requestLeave, setSubClass, autoAssign: runAutoAssign,
+    enroll, cancel, promoteWaitlist, adminCancelRegistrations, keepOnlyProfile, addSibling, resetPasswordByPhone, teacherPins, requestLeave, setSubClass, autoAssign: runAutoAssign,
     saveCamp, deleteCamp, saveSettings, reloadPublic, clearStudentPii, refreshAdminProfiles,
   }
 }

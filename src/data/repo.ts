@@ -1,8 +1,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import {
-  Camp, EmergencyContact, PublicSettings, Registration,
-  StudentLoginResult, StudentProfileView,
+  AttendStatus, BindSiblingResult, Camp, EmergencyContact, PublicSettings, Registration, ResetPasswordResult,
+  StudentLoginResult, StudentProfileView, TeacherRosterResult,
 } from '../types'
+import { generatePin, isValidPin } from '../lib/pin'
+import { isValidContact } from '../lib/phone'
 import { DEFAULT_LOCAL_SETTINGS_STORE, DEFAULT_PUBLIC_SETTINGS, LocalSettingsStore, SEED } from './seed'
 import { LOCAL_ADMIN_PASSWORD_SHA256, matchesLocalHash, sha256Hex } from '../lib/localCrypto'
 
@@ -10,6 +12,8 @@ export interface AdminBundle {
   success: true
   settings: PublicSettings
   profiles: StudentProfileView[]
+  /** camp_id → 教師點名 PIN（僅後台可得） */
+  teacher_pins: Record<string, string>
 }
 
 export interface Repo {
@@ -32,12 +36,24 @@ export interface Repo {
   adminSetContacts(adminPassword: string, studentId: string, contacts: EmergencyContact[]): Promise<void>
   adminSaveSettings(
     adminPassword: string,
-    patch: { term_name: string; registration_start_at: string; registration_end_at: string; new_admin_password?: string },
+    patch: {
+      term_name: string; registration_start_at: string; registration_end_at: string; new_admin_password?: string
+      global_alert_message?: string; global_alert_active?: boolean
+    },
   ): Promise<PublicSettings>
-  adminSaveCamp(adminPassword: string, camp: Camp): Promise<void>
+  /** camp.teacher_pin 不會存進公開的營隊資料；伺服器另存並回傳實際 PIN */
+  adminSaveCamp(adminPassword: string, camp: Camp): Promise<{ teacher_pin?: string }>
   adminDeleteCamp(adminPassword: string, campId: string): Promise<void>
   /** 候補遞補轉正：伺服器端檢查名額，已滿拋出 CAMP_FULL */
   adminPromoteWaitlist(adminPassword: string, regId: string): Promise<void>
+
+  /** 忘記密碼：學號 + 主要緊急聯絡人電話 */
+  resetPasswordByPhone(studentId: string, phone: string, newPassword: string): Promise<ResetPasswordResult>
+  /** 手足綁定：驗證兩個帳號；B 沒有聯絡人時自動複製 A 的 */
+  bindSibling(a: { id: string; password: string }, b: { id: string; password: string }): Promise<BindSiblingResult>
+  /** 教師點名簿（以營隊 PIN 驗證） */
+  teacherRoster(campId: string, pin: string): Promise<TeacherRosterResult>
+  teacherMark(campId: string, pin: string, studentId: string, date: string, status: AttendStatus | null): Promise<{ success: boolean; message?: string }>
 }
 
 // ─── localStorage 內部結構（含 hash，永不當作公開 API 回傳）───
@@ -73,7 +89,7 @@ function toView(r: LocalProfileRow): StudentProfileView {
 function getLocalSettings(): LocalSettingsStore {
   const raw = ls<LocalSettingsStore | null>('camp_settings_secure', null)
   if (!raw?.admin_password_hash) return { ...DEFAULT_LOCAL_SETTINGS_STORE }
-  return raw
+  return { ...DEFAULT_LOCAL_SETTINGS_STORE, ...raw }
 }
 
 function getLocalProfiles(): LocalProfileRow[] {
@@ -95,6 +111,31 @@ async function localAssertAdmin(adminPassword: string) {
   }
 }
 
+// ─── 本機示範：教師 PIN／點名／忘記密碼計次（邏輯與 schema.sql 對應）───
+interface LocalPinRow { pin: string; failed: number; lockedUntil: number }
+interface LocalMark { camp_id: string; student_id: string; date: string; status: AttendStatus }
+const PIN_MAX_FAILS = 8, PIN_LOCK_MS = 15 * 60_000, RESET_MAX_FAILS = 5, RESET_LOCK_MS = 30 * 60_000
+const RESET_GENERIC = '驗證失敗：學號或主要聯絡人電話不符。連續錯誤多次將暫停此功能 30 分鐘。'
+const getPins = () => ls<Record<string, LocalPinRow>>('camp_teacher_pins', {})
+function ensurePins(camps: Camp[]) {
+  const m = getPins(); let changed = false
+  for (const c of camps) if (!m[c.id]) { m[c.id] = { pin: generatePin(), failed: 0, lockedUntil: 0 }; changed = true }
+  if (changed) saveLs('camp_teacher_pins', m)
+  return m
+}
+function localTeacherCheck(campId: string, pin: string): { ok: true } | { ok: false; message: string; locked?: boolean } {
+  const m = ensurePins(ls<Camp[]>('camp_camps', SEED)); const r = m[campId]
+  if (!r) return { ok: false, message: '查無此營隊，或尚未設定教師 PIN' }
+  if (r.lockedUntil > Date.now()) return { ok: false, locked: true, message: 'PIN 錯誤次數過多，請 15 分鐘後再試' }
+  if (pin && pin === r.pin) { if (r.failed || r.lockedUntil) { m[campId] = { ...r, failed: 0, lockedUntil: 0 }; saveLs('camp_teacher_pins', m) } return { ok: true } }
+  if (r.failed + 1 >= PIN_MAX_FAILS) {
+    m[campId] = { ...r, failed: 0, lockedUntil: Date.now() + PIN_LOCK_MS }; saveLs('camp_teacher_pins', m)
+    return { ok: false, locked: true, message: 'PIN 錯誤次數過多，已暫停 15 分鐘' }
+  }
+  m[campId] = { ...r, failed: r.failed + 1 }; saveLs('camp_teacher_pins', m)
+  return { ok: false, message: `PIN 錯誤（尚可嘗試 ${PIN_MAX_FAILS - (r.failed + 1)} 次）` }
+}
+
 const localRepo: Repo = {
   async listCamps() { return ls('camp_camps', SEED) },
   async listRegs() {
@@ -114,6 +155,8 @@ const localRepo: Repo = {
       term_name: s.term_name,
       registration_start_at: s.registration_start_at,
       registration_end_at: s.registration_end_at,
+      global_alert_message: s.global_alert_message,
+      global_alert_active: s.global_alert_active,
     }
   },
 
@@ -193,10 +236,12 @@ const localRepo: Repo = {
   async verifyAdminAndFetchAll(adminPassword) {
     await localAssertAdmin(adminPassword)
     const s = await this.getPublicSettings()
+    const pins = ensurePins(ls<Camp[]>('camp_camps', SEED))
     return {
       success: true as const,
       settings: s,
       profiles: getLocalProfiles().map(toView),
+      teacher_pins: Object.fromEntries(Object.entries(pins).map(([k, v]) => [k, v.pin])),
     }
   },
 
@@ -244,6 +289,8 @@ const localRepo: Repo = {
       term_name: patch.term_name,
       registration_start_at: patch.registration_start_at,
       registration_end_at: patch.registration_end_at,
+      global_alert_message: (patch.global_alert_message ?? cur.global_alert_message).slice(0, 300),
+      global_alert_active: patch.global_alert_active ?? cur.global_alert_active,
       admin_password_hash: patch.new_admin_password && patch.new_admin_password.trim().length >= 4
         ? await sha256Hex(patch.new_admin_password)
         : cur.admin_password_hash,
@@ -254,18 +301,28 @@ const localRepo: Repo = {
       term_name: next.term_name,
       registration_start_at: next.registration_start_at,
       registration_end_at: next.registration_end_at,
+      global_alert_message: next.global_alert_message,
+      global_alert_active: next.global_alert_active,
     }
   },
 
   async adminSaveCamp(adminPassword, camp) {
     await localAssertAdmin(adminPassword)
+    const { teacher_pin, ...pub } = camp   // PIN 不進公開資料
+    if (teacher_pin && !isValidPin(teacher_pin)) throw new Error('INVALID_PIN')
     const l = ls<Camp[]>('camp_camps', SEED)
-    saveLs('camp_camps', l.some(x => x.id === camp.id) ? l.map(x => x.id === camp.id ? camp : x) : [...l, camp])
+    saveLs('camp_camps', l.some(x => x.id === pub.id) ? l.map(x => x.id === pub.id ? pub : x) : [...l, pub])
+    const pins = getPins()
+    pins[pub.id] = { pin: teacher_pin ?? pins[pub.id]?.pin ?? generatePin(), failed: 0, lockedUntil: 0 }
+    saveLs('camp_teacher_pins', pins)
+    return { teacher_pin: pins[pub.id].pin }
   },
 
   async adminDeleteCamp(adminPassword, campId) {
     await localAssertAdmin(adminPassword)
     saveLs('camp_camps', ls<Camp[]>('camp_camps', SEED).filter(x => x.id !== campId))
+    const pins = getPins(); delete pins[campId]; saveLs('camp_teacher_pins', pins)
+    saveLs('camp_attendance', ls<LocalMark[]>('camp_attendance', []).filter(m => m.camp_id !== campId))
   },
 
   async adminPromoteWaitlist(adminPassword, regId) {
@@ -277,6 +334,69 @@ const localRepo: Repo = {
     const n = regs.filter(x => x.camp_id === r.camp_id && x.status === 'enrolled').length
     if (camp && n >= camp.max_capacity) throw new Error('CAMP_FULL')
     saveLs('camp_regs', regs.map(x => x.id === regId ? { ...x, status: 'enrolled' as const } : x))
+  },
+
+  async resetPasswordByPhone(studentId, phone, newPassword) {
+    const id = studentId.trim()
+    if (!id || newPassword.trim().length < 4) return { success: false, message: '請輸入學號與電話，且新密碼至少 4 碼' }
+    const row = getLocalProfiles().find(p => p.student_id === id)
+    if (!row) return { success: false, message: RESET_GENERIC }
+    const att = ls<Record<string, { n: number; lockedUntil: number }>>('camp_reset_attempts', {})
+    const cur = att[id] ?? { n: 0, lockedUntil: 0 }
+    if (cur.lockedUntil > Date.now()) return { success: false, locked: true, message: '嘗試次數過多，此功能暫停 30 分鐘，請稍後再試或洽學校行政人員' }
+    const list = row.emergency_contacts ?? []
+    const primary = list.find(c => c.is_primary) ?? list[0]
+    const digits = (s: string) => s.replace(/[^0-9]/g, '')
+    if (primary && digits(primary.phone) !== '' && digits(primary.phone) === digits(phone)) {
+      saveLocalProfile({ ...row, password_hash: await sha256Hex(newPassword), is_locked: false, failed_attempts: 0 })
+      delete att[id]; saveLs('camp_reset_attempts', att)
+      return { success: true, message: '密碼已重設，帳號已解鎖，請用新密碼登入' }
+    }
+    att[id] = cur.n + 1 >= RESET_MAX_FAILS ? { n: 0, lockedUntil: Date.now() + RESET_LOCK_MS } : { n: cur.n + 1, lockedUntil: 0 }
+    saveLs('camp_reset_attempts', att)
+    return { success: false, message: RESET_GENERIC }
+  },
+
+  async bindSibling(a, b) {
+    if (!b.id.trim() || a.id === b.id) return { success: false, message: '請輸入另一位學生的學號' }
+    const la = await this.verifyStudentLogin(a.id, a.password)
+    if (!la.success) return { success: false, message: la.message, who: 'A', is_locked: la.is_locked }
+    const lb = await this.verifyStudentLogin(b.id, b.password)
+    if (!lb.success) return { success: false, message: lb.message, who: 'B', is_locked: lb.is_locked }
+    const ca = la.emergency_contacts ?? []
+    let cb = lb.emergency_contacts ?? []
+    let copied = false
+    if (cb.length === 0 && ca.length > 0 && ca.every(isValidContact)) {
+      const row = getLocalProfiles().find(p => p.student_id === b.id)!
+      saveLocalProfile({ ...row, emergency_contacts: ca })
+      cb = ca; copied = true
+    }
+    return { success: true, copied, emergency_contacts: cb }
+  },
+
+  async teacherRoster(campId, pin) {
+    const chk = localTeacherCheck(campId, pin)
+    if (!chk.ok) return { success: false, message: chk.message, locked: chk.locked }
+    const camp = ls<Camp[]>('camp_camps', SEED).find(c => c.id === campId)
+    if (!camp) return { success: false, message: '查無此營隊，或尚未設定教師 PIN' }
+    const roster = ls<Registration[]>('camp_regs', [])
+      .filter(r => r.camp_id === campId && r.status === 'enrolled')
+      .map(r => ({ student_id: r.student_id, assigned_sub_class: r.assigned_sub_class, leave_dates: r.leave_dates ?? [] }))
+    const marks = ls<LocalMark[]>('camp_attendance', []).filter(m => m.camp_id === campId)
+      .map(m => ({ student_id: m.student_id, date: m.date, status: m.status }))
+    return { success: true, camp, roster, marks }
+  },
+
+  async teacherMark(campId, pin, studentId, date, status) {
+    const chk = localTeacherCheck(campId, pin)
+    if (!chk.ok) return { success: false, message: chk.message }
+    const camp = ls<Camp[]>('camp_camps', SEED).find(c => c.id === campId)
+    if (!camp?.dates.includes(date)) return { success: false, message: '此日期不在營隊上課日期內' }
+    const enrolled = ls<Registration[]>('camp_regs', []).some(r => r.camp_id === campId && r.student_id === studentId && r.status === 'enrolled')
+    if (!enrolled) return { success: false, message: '此學生不在報名名單中' }
+    const rest = ls<LocalMark[]>('camp_attendance', []).filter(m => !(m.camp_id === campId && m.student_id === studentId && m.date === date))
+    saveLs('camp_attendance', status ? [...rest, { camp_id: campId, student_id: studentId, date, status }] : rest)
+    return { success: true }
   },
 }
 
@@ -292,6 +412,8 @@ function mapPublicSettings(raw: any): PublicSettings {
     term_name: raw?.term_name ?? DEFAULT_PUBLIC_SETTINGS.term_name,
     registration_start_at: raw?.registration_start_at ?? '',
     registration_end_at: raw?.registration_end_at ?? '',
+    global_alert_message: raw?.global_alert_message ?? '',
+    global_alert_active: !!raw?.global_alert_active,
   }
 }
 
@@ -388,6 +510,7 @@ function createSupaRepo(sb: SupabaseClient): Repo {
         success: true as const,
         settings: mapPublicSettings(data.settings),
         profiles: (data.profiles ?? []) as StudentProfileView[],
+        teacher_pins: (data.teacher_pins ?? {}) as Record<string, string>,
       }
     },
 
@@ -423,17 +546,22 @@ function createSupaRepo(sb: SupabaseClient): Repo {
         p_registration_start_at: patch.registration_start_at || null,
         p_registration_end_at: patch.registration_end_at || null,
         p_new_admin_password: patch.new_admin_password ?? null,
+        p_global_alert_message: patch.global_alert_message ?? null,
+        p_global_alert_active: patch.global_alert_active ?? null,
       })
       if (error) rpcError(error)
       return mapPublicSettings(data)
     },
 
     async adminSaveCamp(adminPassword, camp) {
-      const { error } = await sb.rpc('camp_admin_save_camp', {
+      const { teacher_pin, ...pub } = camp   // PIN 另存，不放進公開的營隊 data
+      const { data, error } = await sb.rpc('camp_admin_save_camp', {
         p_admin_password: adminPassword,
-        p_camp: camp,
+        p_camp: pub,
+        p_teacher_pin: teacher_pin ?? null,
       })
       if (error) rpcError(error)
+      return { teacher_pin: data?.teacher_pin as string | undefined }
     },
 
     async adminDeleteCamp(adminPassword, campId) {
@@ -450,6 +578,43 @@ function createSupaRepo(sb: SupabaseClient): Repo {
         p_reg_id: regId,
       })
       if (error) rpcError(error)
+    },
+
+    async resetPasswordByPhone(studentId, phone, newPassword) {
+      const { data, error } = await sb.rpc('camp_reset_student_password', {
+        p_id: studentId, p_phone: phone, p_new_password: newPassword,
+      })
+      if (error) rpcError(error)
+      return { success: !!data?.success, message: data?.message ?? '重設失敗', locked: !!data?.locked }
+    },
+
+    async bindSibling(a, b) {
+      const { data, error } = await sb.rpc('camp_bind_sibling', {
+        p_a_id: a.id, p_a_password: a.password, p_b_id: b.id, p_b_password: b.password,
+      })
+      if (error) rpcError(error)
+      if (!data?.success) return { success: false, message: data?.message ?? '綁定失敗', who: data?.who, is_locked: !!data?.is_locked }
+      return { success: true, copied: !!data.copied, emergency_contacts: (data.emergency_contacts ?? []) as EmergencyContact[] }
+    },
+
+    async teacherRoster(campId, pin) {
+      const { data, error } = await sb.rpc('camp_teacher_get_roster', { p_camp_id: campId, p_pin: pin })
+      if (error) rpcError(error)
+      if (!data?.success) return { success: false, message: data?.message ?? '驗證失敗', locked: !!data?.locked }
+      return {
+        success: true,
+        camp: data.camp as Camp,
+        roster: (data.roster ?? []).map((r: any) => ({ student_id: r.student_id, assigned_sub_class: r.assigned_sub_class ?? undefined, leave_dates: r.leave_dates ?? [] })),
+        marks: data.marks ?? [],
+      }
+    },
+
+    async teacherMark(campId, pin, studentId, date, status) {
+      const { data, error } = await sb.rpc('camp_teacher_mark', {
+        p_camp_id: campId, p_pin: pin, p_student_id: studentId, p_date: date, p_status: status,
+      })
+      if (error) rpcError(error)
+      return { success: !!data?.success, message: data?.message }
     },
   }
 }

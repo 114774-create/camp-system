@@ -60,7 +60,7 @@ const dict = {
   'camp.success': { 'zh-TW': '報名成功', en: 'Enrollment successful' },
   'camp.cancelled': { 'zh-TW': '已取消，名額已釋出', en: 'Cancelled; seat released' },
   'camp.needContact': {
-    'zh-TW': '請先至『緊急聯絡人資料』分頁填寫完整聯絡人姓名與電話，才可進行營隊報名！',
+    'zh-TW': '請先至『聯絡人資料與設定」分頁填寫完整聯絡人姓名與電話，才可進行營隊報名！',
     en: 'Please complete Emergency Contacts (name & phone) before enrolling!',
   },
   'camp.leaveBlocked': {
@@ -133,8 +133,9 @@ const dict = {
   'admin.promote': { 'zh-TW': '遞補轉正', en: 'Promote' },
   'admin.promoted': { 'zh-TW': '已遞補轉正（如需分班請重新執行自動分班）', en: 'Promoted (re-run auto-assign if the camp uses sub-classes)' },
   'admin.noSeat': { 'zh-TW': '目前無空缺', en: 'No seat available' },
-  'contact.phoneHint': { 'zh-TW': '手機 10 碼（09 開頭）或市話 7 碼', en: 'Mobile: 10 digits starting 09; landline: 7 digits' },
-  'contact.phoneBad': { 'zh-TW': '電話格式不正確：手機請輸入 10 碼（09 開頭），市話請輸入 7 碼', en: 'Invalid number: mobile must be 10 digits (09…), landline 7 digits' },
+  'contact.phoneHint': { 'zh-TW': '手機 09XX-XXXXXX 或 09XXXXXXXX；市話 0X-XXXXXXX', en: 'Mobile 09XX-XXXXXX / 09XXXXXXXX; landline 0X-XXXXXXX' },
+  'contact.phoneBad': { 'zh-TW': '電話格式不正確：手機 09XX-XXXXXX 或 09XXXXXXXX；市話 0X-XXXXXXX', en: 'Invalid number: mobile 09XX-XXXXXX / 09XXXXXXXX, landline 0X-XXXXXXX' },
+  'contact.nameBad': { 'zh-TW': '姓名至少 2 個字，且只能是中文或英文字母', en: 'Name: at least 2 characters, letters/Chinese only' },
   'contact.clearAll': { 'zh-TW': '清空所有聯絡人', en: 'Clear all contacts' },
   'contact.clearPending': { 'zh-TW': '已清空畫面，請按「儲存」才會真正刪除。', en: 'Cleared on screen — press Save to apply.' },
   'contact.clearConfirm': { 'zh-TW': '確定要刪除所有緊急聯絡人嗎？刪除後需重新填寫才能報名新的營隊。', en: 'Delete all emergency contacts? You must add one again to enroll in new camps.' },

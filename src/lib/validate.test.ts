@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Camp, Registration, Student } from '../types'
-import { buttonState, validateRegistration } from './validate'
+import { buttonState, GRADUATE_MESSAGE, validateRegistration } from './validate'
 import { autoAssign } from './assign'
 
 const mk = (o: Partial<Camp>): Camp => ({ id: 'x', term: 'T', season: 'summer', name: 'X', attendance_mode: 'full_course', dates: ['2026-07-06'], start_time: '09:00', end_time: '12:00', allowed_grades: [1, 2, 3, 4, 5, 6], max_capacity: 10, ignore_time_conflict: false, allow_concurrent_with: [], has_sub_classes: false, sub_classes: [], location: '', teacher: '', notes: '', ...o })
@@ -64,6 +64,25 @@ describe('validateRegistration', () => {
     const d4 = mk({ id: 'd4', group_id: 'g', attendance_mode: 'single_day_choice', max_capacity: 1 })
     const d5 = mk({ id: 'd5', group_id: 'g', attendance_mode: 'single_day_choice', dates: ['2026-11-05'], max_capacity: 1 })
     expect(code(validateRegistration(st('s2', 1), d5, d5.dates[0], [reg('s1', 'd4')], [d4, d5]))).toBe('OK')
+  })
+})
+describe('夏令營六年級阻擋', () => {
+  const run = (grade: number, o: Partial<Camp>) => { const c = mk({ id: 'a', ...o }); return validateRegistration(st('s', grade), c, c.dates[0], [], [c]) }
+  it('夏令營（season=summer）即使不限年級也禁止 6 年級，訊息明確', () => {
+    const r = run(6, { season: 'summer', allowed_grades: [1, 2, 3, 4, 5, 6] })
+    expect(code(r)).toBe('GRADUATE'); expect((r as any).message).toBe(GRADUATE_MESSAGE)
+    expect(GRADUATE_MESSAGE).toContain('六年級畢業生無法報名夏令營')
+  })
+  it('檔期名稱含「夏令營」也算（即使 season 不是 summer）', () => {
+    expect(code(run(6, { season: 'holiday', term: '115學年度夏令營' }))).toBe('GRADUATE')
+  })
+  it('其他年級、以及寒令營／假日營的 6 年級不受影響', () => {
+    expect(code(run(5, { season: 'summer' }))).toBe('OK')
+    expect(code(run(6, { season: 'winter', term: '115學年度寒令營' }))).toBe('OK')
+    expect(code(run(6, { season: 'holiday', term: '115學年度第一學期假日營隊' }))).toBe('OK')
+  })
+  it('按鈕：畢業生不可報名且鎖定', () => {
+    expect(buttonState({ ok: false, code: 'GRADUATE', message: '' })).toMatchObject({ label: '畢業生不可報名', disabled: true, kind: 'graduate' })
   })
 })
 describe('autoAssign（年級排序 + S 型分配）', () => {

@@ -55,6 +55,8 @@ export interface Camp {
   location: string
   teacher: string
   notes: string
+  /** 教師點名簿 PIN（4 碼）。僅後台載入／儲存時存在；公開讀取的營隊資料絕不含此欄位 */
+  teacher_pin?: string
 }
 
 export type RegStatus = 'enrolled' | 'waitlisted' | 'cancelled'
@@ -78,6 +80,9 @@ export interface PublicSettings {
   registration_start_at: string
   registration_end_at: string
   term_name: string
+  /** 全站緊急公告（颱風停課等） */
+  global_alert_message: string
+  global_alert_active: boolean
 }
 
 /** @deprecated 使用 PublicSettings；保留別名避免舊引用中斷 */
@@ -89,3 +94,15 @@ export type Tab = 'front' | 'profile' | 'status' | 'camps' | 'students' | 'setti
 export type StudentLoginResult =
   | { success: true; emergency_contacts: EmergencyContact[]; is_locked: false; remaining_attempts: number }
   | { success: false; remaining_attempts: number; is_locked: boolean; message: string }
+
+// ─── 點名簿／手足／密碼重設 ───
+export type AttendStatus = 'present' | 'absent'
+export interface AttendanceMark { student_id: string; date: string; status: AttendStatus }
+export interface RosterEntry { student_id: string; assigned_sub_class?: string; leave_dates: string[] }
+export type TeacherRosterResult =
+  | { success: true; camp: Camp; roster: RosterEntry[]; marks: AttendanceMark[] }
+  | { success: false; message: string; locked?: boolean }
+export type BindSiblingResult =
+  | { success: true; copied: boolean; emergency_contacts: EmergencyContact[] }
+  | { success: false; message: string; who?: 'A' | 'B'; is_locked?: boolean }
+export interface ResetPasswordResult { success: boolean; message: string; locked?: boolean }

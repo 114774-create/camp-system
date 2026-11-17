@@ -76,3 +76,10 @@ body {
     background: white !important;
   }
 }
+
+/* 全站緊急公告跑馬燈（尊重「減少動態效果」設定） */
+@keyframes camp-marquee { 0% { transform: translateX(0); } 100% { transform: translateX(-100%); } }
+.camp-marquee { display: inline-block; padding-left: 100%; white-space: nowrap; animation: camp-marquee 18s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .camp-marquee { padding-left: 0; white-space: normal; animation: none; display: block; text-align: center; }
+}

@@ -2,7 +2,7 @@ import { Camp, Registration, Student, StudentProfileView, PublicSettings } from 
 import { hasValidEmergencyContacts } from './auth'
 import { formatTaipei, nowInTaipei, registrationWindowStatus } from './time'
 
-export type VFailCode = 'GRADE' | 'FULL' | 'CONFLICT' | 'GROUP' | 'DUP' | 'WAITLISTED' | 'CONTACT' | 'WINDOW' | 'LOCKED'
+export type VFailCode = 'GRADE' | 'GRADUATE' | 'FULL' | 'CONFLICT' | 'GROUP' | 'DUP' | 'WAITLISTED' | 'CONTACT' | 'WINDOW' | 'LOCKED'
 /** ok + waitlist:true 代表「可報名，但名額已滿，將排入候補」 */
 export type VResult = { ok: true; waitlist?: boolean } | { ok: false; code: VFailCode; message: string }
 
@@ -10,6 +10,10 @@ export const md = (d: string) => { const [, m, x] = d.split('-'); return `${+m}/
 const overlap = (a: Camp, b: Camp) => a.start_time < b.end_time && b.start_time < a.end_time
 
 /** existingRegistrations = 全校所有報名紀錄（用來算名額與學生既有報名） */
+/** 夏令營：檔期名稱含「夏令營」，或營隊類型為 summer */
+export const isSummerCamp = (c: Pick<Camp, 'term' | 'season'>) => c.season === 'summer' || (c.term ?? '').includes('夏令營')
+export const GRADUATE_MESSAGE = '六年級畢業生無法報名夏令營'
+
 export function validateRegistration(
   student: Student,
   target: Camp,
@@ -29,13 +33,15 @@ export function validateRegistration(
   }
 
   if (opts?.profile && !hasValidEmergencyContacts(opts.profile)) {
-    return fail('CONTACT', '請先至『緊急聯絡人資料』分頁填寫完整聯絡人姓名與電話，才可進行營隊報名！')
+    return fail('CONTACT', '請先至「聯絡人資料與設定」分頁填寫完整聯絡人姓名與電話，才可進行營隊報名！')
   }
 
   const camp = (id: string) => allCamps.find(c => c.id === id)
   // 正取與候補都算「有效報名」：用於重複、單日擇一、衝堂檢核，避免候補轉正後才發現衝堂
   const live = existingRegistrations.filter(r => r.status === 'enrolled' || r.status === 'waitlisted')
   const mine = live.filter(r => r.student_id === student.student_id)
+  // 夏令營採舊學年資料：六年級（畢業生）一律不可報名，即使營隊設定為不限年級
+  if (isSummerCamp(target) && student.grade === 6) return fail('GRADUATE', GRADUATE_MESSAGE)
   if (!target.allowed_grades.includes(student.grade)) return fail('GRADE', '年級不符')
   const dup = mine.find(r => r.camp_id === target.id)
   if (dup) return dup.status === 'waitlisted' ? fail('WAITLISTED', '您已在此營隊的候補名單中') : fail('DUP', '您已報名此營隊')
@@ -59,11 +65,12 @@ export function validateRegistration(
   return { ok: true }
 }
 
-export type BtnKind = 'enroll' | 'waitlist' | 'grade' | 'full' | 'already' | 'waitlisted' | 'contact' | 'window'
+export type BtnKind = 'enroll' | 'waitlist' | 'grade' | 'graduate' | 'full' | 'already' | 'waitlisted' | 'contact' | 'window'
 /** 前台按鈕狀態：額滿但可候補時顯示「額滿，排入候補」；衝堂與擇一則點擊後顯示提示 */
 export const buttonState = (v: VResult): { label: string; disabled: boolean; kind: BtnKind } =>
   v.ok ? (v.waitlist ? { label: '額滿，排入候補', disabled: false, kind: 'waitlist' } : { label: '報名', disabled: false, kind: 'enroll' })
   : v.code === 'GRADE' ? { label: '年級不符', disabled: true, kind: 'grade' }
+  : v.code === 'GRADUATE' ? { label: '畢業生不可報名', disabled: true, kind: 'graduate' }
   : v.code === 'FULL' ? { label: '已額滿', disabled: true, kind: 'full' }
   : v.code === 'DUP' ? { label: '已報名', disabled: true, kind: 'already' }
   : v.code === 'WAITLISTED' ? { label: '候補中', disabled: true, kind: 'waitlisted' }

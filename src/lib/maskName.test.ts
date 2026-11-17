@@ -21,6 +21,8 @@ const openWindow: PublicSettings = {
   registration_start_at: '2020-01-01T00:00:00.000Z',
   registration_end_at: '2099-01-01T00:00:00.000Z',
   term_name: 'T',
+  global_alert_message: '',
+  global_alert_active: false,
 }
 
 describe('maskName', () => {
@@ -64,12 +66,14 @@ describe('leave rules', () => {
 describe('registration window', () => {
   it('未開放與已截止', () => {
     const c = mk({ id: 'a' })
-    const profile = { ...emptyProfileView('s'), emergency_contacts: [{ name: 'A', relation: '母', phone: '09', is_primary: true }] }
+    const profile = { ...emptyProfileView('s'), emergency_contacts: [{ name: '王小美', relation: '母', phone: '0912345678', is_primary: true }] }
     const before: PublicSettings = {
       id: 'default',
       registration_start_at: '2090-01-01T00:00:00.000Z',
       registration_end_at: '2099-01-01T00:00:00.000Z',
       term_name: 'T',
+      global_alert_message: '',
+      global_alert_active: false,
     }
     const after: PublicSettings = {
       ...before,

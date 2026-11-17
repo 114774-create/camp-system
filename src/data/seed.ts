@@ -58,6 +58,8 @@ export const DEFAULT_PUBLIC_SETTINGS: PublicSettings = {
   registration_start_at: '2025-12-01T00:00:00.000Z',
   registration_end_at: '2026-12-31T15:59:00.000Z',
   term_name: '115學年度夏令營',
+  global_alert_message: '',
+  global_alert_active: false,
 }
 
 /** 本機 localStorage 內部用（含雜湊，絕不當 API 回傳） */

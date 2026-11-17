@@ -3,7 +3,7 @@ import { Plus, Save, Trash2 } from 'lucide-react'
 import { EmergencyContact, Student, StudentLoginResult, StudentProfileView } from '../../types'
 import { useI18n } from '../../lib/I18nContext'
 import { displayStudentName } from '../../lib/maskName'
-import { cleanContacts, contactIssues, isValidTwPhone } from '../../lib/phone'
+import { cleanContacts, contactIssues, isValidContactName, isValidTwPhone } from '../../lib/phone'
 
 const blank = (): EmergencyContact => ({ name: '', relation: '', phone: '', is_primary: false })
 
@@ -68,7 +68,8 @@ export default function ContactsPage({
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1 text-sm">{t('contact.name')}
-              <input className="input-field" value={c.name} onChange={e => setAt(i, { name: e.target.value })} />
+              <input className="input-field" value={c.name} aria-invalid={!!c.name.trim() && !isValidContactName(c.name)} onChange={e => setAt(i, { name: e.target.value })} />
+              {c.name.trim() && !isValidContactName(c.name) && <span className="text-xs text-rose-600">{t('contact.nameBad')}</span>}
             </label>
             <label className="grid gap-1 text-sm">{t('contact.relation')}
               <input className="input-field" value={c.relation} onChange={e => setAt(i, { relation: e.target.value })} placeholder={locale === 'en' ? 'Parent / Guardian' : '父／母／監護人'} />
