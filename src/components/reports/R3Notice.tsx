@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Student } from '../../types'
 import { ReportProps, byClassNo, campLabel, contactOf, enrolledJoin } from '../../lib/report'
 import { md } from '../../lib/validate'
+import { normName } from '../../lib/name'
 import { useI18n } from '../../lib/I18nContext'
 import { displayStudentName } from '../../lib/maskName'
 
@@ -11,7 +12,7 @@ export default function R3Notice(p: ReportProps) {
   const [key, setKey] = useState('101')
   const all = p.camps.flatMap(c => enrolledJoin(c.id, p).map(x => ({ ...x, c })))
   const pick = by === 'class' ? all.filter(x => x.s.classCode === key) : all.filter(x => x.c.id === key)
-  const stus = [...new Map(pick.map(x => [x.s.student_id, x.s])).values()].sort(byClassNo)
+  const stus = [...new Map(pick.map(x => [normName(x.s.name), x.s])).values()].sort(byClassNo)
   const pages: Student[][] = []
   for (let i = 0; i < stus.length; i += 3) pages.push(stus.slice(i, i + 3))
 
@@ -31,11 +32,11 @@ export default function R3Notice(p: ReportProps) {
       {pages.map((pg, i) => (
         <div key={i} className="pg">
           {pg.map(s => {
-            const mine = all.filter(x => x.s.student_id === s.student_id)
+            const mine = all.filter(x => normName(x.s.name) === normName(s.name))
             const sname = displayStudentName(s, { locale, revealed: true })
             const en = locale === 'en'
             return (
-              <div key={s.student_id} className="mb-2 flex flex-col border-b border-slate-300 pb-2" style={{ height: '88mm' }}>
+              <div key={normName(s.name)} className="mb-2 flex flex-col border-b border-slate-300 pb-2" style={{ height: '88mm' }}>
                 {/* 上半：營隊資訊（家長留存） */}
                 <div>
                   <h3 className="text-center font-bold">
@@ -45,7 +46,7 @@ export default function R3Notice(p: ReportProps) {
                     {s.classCode} {en ? 'Class' : '班'} {s.no} {en ? 'No.' : '號'}　{sname}
                   </p>
                   <p className="text-xs text-slate-600">
-                    {en ? 'Emergency contact' : '緊急聯絡人'}：{contactOf(s.student_id, p.profiles)}
+                    {en ? 'Emergency contact' : '緊急聯絡人'}：{contactOf(s, p.profiles)}
                   </p>
                   <table className="w-full border-collapse text-xs">
                     <thead>

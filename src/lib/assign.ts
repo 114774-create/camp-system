@@ -1,4 +1,5 @@
 import { Camp, Registration, Student } from '../types'
+import { studentIndex } from './name'
 
 /** S 型索引：n=2 → 0,1,1,0,0,1,1,0…；n=3 → 0,1,2,2,1,0,0,1,2… */
 export function snakeIndex(i: number, n: number): number {
@@ -16,10 +17,10 @@ export function snakeIndex(i: number, n: number): number {
 export function autoAssign(camp: Camp, regs: Registration[], students: Student[]): Registration[] {
   const n = camp.sub_classes.length
   if (!n) return regs
-  const byId = new Map(students.map(s => [s.student_id, s]))
+  const idx = studentIndex(students)
   const order = regs
     .filter(r => r.camp_id === camp.id && r.status === 'enrolled')
-    .map(r => ({ r, s: byId.get(r.student_id) }))
+    .map(r => ({ r, s: idx.get(r.student_name) }))
     .sort((a, b) =>
       (a.s?.grade ?? 99) - (b.s?.grade ?? 99)
       || +(a.s?.classCode ?? 0) - +(b.s?.classCode ?? 0)

@@ -83,3 +83,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .camp-marquee { padding-left: 0; white-space: normal; animation: none; display: block; text-align: center; }
 }
+
+/* 倒數最後 24 小時：微弱的呼吸閃爍（尊重「減少動態效果」） */
+@keyframes camp-breath { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+.camp-breath { animation: camp-breath 2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .camp-breath { animation: none; } }

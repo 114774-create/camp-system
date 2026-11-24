@@ -67,3 +67,19 @@
 新增檔案（邏輯，不可更動）：`lib/phone.ts`（姓名／電話嚴格正則）、`lib/pin.ts`、`lib/route.ts`、`lib/rollcall.ts`、`lib/siblings.ts`、`data/repo.test.ts`。
 新增 UI（可改外觀，不可動 props／邏輯）：`ui/AlertBanner.tsx`、`ui/SiblingBar.tsx`、`ui/ForgotPasswordPanel.tsx`、`teacher/TeacherRollCall.tsx`（手機直式，簽到／缺席按鈕維持超大尺寸）。
 驗收：`npm test` ≥ 84 個測試通過、`npm run build` 無錯誤。
+
+---
+## v5（密碼與聯絡人改以「學生姓名」為鍵）
+- 新增鎖定檔案：`lib/name.ts`（`normName`：去除所有全形／半形空白）、`lib/siblings.ts`（工作階段以姓名為鍵）。
+- `SiblingBar` 的 props 改為 `items: {key, label}[]` + `activeKey`（key 是正規化姓名）。外觀可改，props 不可動。
+- `StudentAdmin` 新增 `duplicateNames` 警告區塊，需保留。
+- 驗收：`npm test` ≥ 94 個測試通過、`npm run build` 無錯誤。
+
+---
+## v6（倒數計時器／預設密碼跟著學號／報名跟著姓名）
+- 新增鎖定檔案（邏輯，不可更動）：`hooks/useCountdown.ts`、`lib/time.ts`（時間一律以絕對時間點比對，顯示才轉 Asia/Taipei）、`supabase/tests/*`。
+- 新增 UI（可改外觀，不可動 props／邏輯）：`ui/RegistrationCountdown.tsx`。三種狀態的文字（⏳ 距離報名開放還有／🔥 距離報名截止剩餘／🚫 本期報名已全面截止）、
+  「最後 24 小時＝紅色＋呼吸閃爍（`camp-breath`）」、`role="timer"` 必須保留；已截止時不得顯示跳動數字。
+- `FrontPage`／`StatusPage` 以 `useNow()` 的同一個時鐘決定按鈕是否 disabled，不可改成只在載入時計算（否則截止瞬間不會自動鎖定）。
+- `ForgotPasswordPanel`：新密碼為「選填」，留空＝重設回預設密碼（目前學號）。
+- 驗收：`npm test` ≥ 125 個測試通過、`npm run build` 無錯誤。

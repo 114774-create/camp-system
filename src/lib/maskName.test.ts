@@ -102,22 +102,22 @@ describe('localRepo RPC simulation', () => {
 
   it('學生登入錯誤 5 次鎖定，且成功時只回傳該生聯絡人', async () => {
     const repo = __localRepo
-    const id = '10101'
+    const name = '王小明', id = '10101'
     for (let i = 0; i < 4; i++) {
-      const r = await repo.verifyStudentLogin(id, 'wrong')
+      const r = await repo.verifyStudentLogin(name, 'wrong', id)
       expect(r.success).toBe(false)
       expect(r.is_locked).toBe(false)
     }
-    const locked = await repo.verifyStudentLogin(id, 'wrong')
+    const locked = await repo.verifyStudentLogin(name, 'wrong', id)
     expect(locked.success).toBe(false)
     expect(locked.is_locked).toBe(true)
 
     // 後台解鎖（使用本機摘要對應之預設後台密碼：字元碼組合，避免原始碼出現明文常數）
     const adminPwd = String.fromCharCode(50, 48, 50, 54)
-    await repo.adminUnlockStudent(adminPwd, id)
-    await repo.adminResetStudentPassword(adminPwd, id)
+    await repo.adminUnlockStudent(adminPwd, name, id)
+    await repo.adminResetStudentPassword(adminPwd, name, id)
 
-    const ok = await repo.verifyStudentLogin(id, id)
+    const ok = await repo.verifyStudentLogin(name, id, id)
     expect(ok.success).toBe(true)
     if (ok.success) expect(ok.emergency_contacts).toEqual([])
   })

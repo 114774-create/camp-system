@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Camp, EmergencyContact, PublicSettings, Registration, Student, StudentProfileView,
 } from '../types'
@@ -9,6 +9,7 @@ import { autoAssign } from '../lib/assign'
 import { canPromote } from '../lib/waitlist'
 import { emptyProfileView, readAdminToken } from '../lib/auth'
 import type { BindSiblingResult, ResetPasswordResult } from '../types'
+import { DUPLICATE_NAME_MESSAGE, findDuplicateNames, normName } from '../lib/name'
 
 const repo = getRepo()
 
@@ -39,12 +40,22 @@ export function useCampData() {
 
   useEffect(() => { reloadPublic() }, [reloadPublic])
 
-  const getProfile = (studentId: string): StudentProfileView =>
-    profiles.find(p => p.student_id === studentId) ?? emptyProfileView(studentId)
+  /** 學號 → 正規化姓名鍵（學號每年會變，密碼與聯絡人以姓名為鍵）。找不到學號回傳空字串 */
+  const keyOfId = (studentId: string) => {
+    const s = students.find(x => x.student_id === studentId)
+    return s ? normName(s.name) : ''
+  }
+  /** 名單中同名同姓者（姓名是唯一鍵，同名時一律拒絕登入，避免互相看到對方資料） */
+  const duplicateNames = useMemo(() => findDuplicateNames(students), [students])
+
+  const getProfile = (studentId: string): StudentProfileView => {
+    const key = keyOfId(studentId)
+    return profiles.find(p => p.student_name === key) ?? emptyProfileView(key)
+  }
 
   const upsertLocalProfile = (view: StudentProfileView) => {
-    setProfiles(prev => prev.some(x => x.student_id === view.student_id)
-      ? prev.map(x => x.student_id === view.student_id ? view : x)
+    setProfiles(prev => prev.some(x => x.student_name === view.student_name)
+      ? prev.map(x => x.student_name === view.student_name ? view : x)
       : [...prev, view])
   }
 
@@ -54,54 +65,41 @@ export function useCampData() {
     return pwd
   }
 
+  const noStudent = { success: false as const, remaining_attempts: 5, is_locked: false, message: '查無此學號' }
+  const dupFail = { success: false as const, remaining_attempts: 5, is_locked: false, message: DUPLICATE_NAME_MESSAGE }
+
   const loginStudent = async (studentId: string, password: string) => {
-    const result = await repo.verifyStudentLogin(studentId, password)
+    const key = keyOfId(studentId)
+    if (!key) return { ok: false as const, locked: false, attempts: 0, message: noStudent.message }
+    if (duplicateNames.includes(key)) return { ok: false as const, locked: false, attempts: 0, message: DUPLICATE_NAME_MESSAGE }
+    const result = await repo.verifyStudentLogin(key, password, studentId)
     if (result.success) {
-      upsertLocalProfile({
-        student_id: studentId,
-        failed_attempts: 0,
-        is_locked: false,
-        emergency_contacts: result.emergency_contacts,
-      })
+      upsertLocalProfile({ student_name: key, failed_attempts: 0, is_locked: false, emergency_contacts: result.emergency_contacts })
       return { ok: true as const }
     }
     if (result.is_locked) {
-      upsertLocalProfile({
-        student_id: studentId,
-        failed_attempts: 5,
-        is_locked: true,
-        emergency_contacts: getProfile(studentId).emergency_contacts,
-      })
+      upsertLocalProfile({ student_name: key, failed_attempts: 5, is_locked: true, emergency_contacts: getProfile(studentId).emergency_contacts })
     }
-    return {
-      ok: false as const,
-      locked: result.is_locked,
-      attempts: 5 - result.remaining_attempts,
-      message: result.message,
-    }
+    return { ok: false as const, locked: result.is_locked, attempts: 5 - result.remaining_attempts, message: result.message }
   }
 
   const changeStudentPassword = async (studentId: string, currentPassword: string, nextPassword: string) => {
-    const result = await repo.updateStudentProfile(studentId, currentPassword, nextPassword, null)
+    const key = keyOfId(studentId)
+    if (!key) return noStudent
+    if (duplicateNames.includes(key)) return dupFail
+    const result = await repo.updateStudentProfile(key, currentPassword, nextPassword, null, studentId)
     if (!result.success) return result
-    upsertLocalProfile({
-      student_id: studentId,
-      failed_attempts: 0,
-      is_locked: false,
-      emergency_contacts: result.emergency_contacts,
-    })
+    upsertLocalProfile({ student_name: key, failed_attempts: 0, is_locked: false, emergency_contacts: result.emergency_contacts })
     return result
   }
 
   const saveEmergencyContacts = async (studentId: string, currentPassword: string, contacts: EmergencyContact[]) => {
-    const result = await repo.updateStudentProfile(studentId, currentPassword, null, contacts)
+    const key = keyOfId(studentId)
+    if (!key) return noStudent
+    if (duplicateNames.includes(key)) return dupFail
+    const result = await repo.updateStudentProfile(key, currentPassword, null, contacts, studentId)
     if (!result.success) return result
-    upsertLocalProfile({
-      student_id: studentId,
-      failed_attempts: 0,
-      is_locked: false,
-      emergency_contacts: result.emergency_contacts,
-    })
+    upsertLocalProfile({ student_name: key, failed_attempts: 0, is_locked: false, emergency_contacts: result.emergency_contacts })
     return result
   }
 
@@ -110,6 +108,10 @@ export function useCampData() {
     setProfiles(bundle.profiles)
     setSettings(bundle.settings)
     setTeacherPins(bundle.teacher_pins)
+    // 把目前試算表的學生名單同步進資料庫：首次登入時以此驗證「學號↔姓名」（尚未同步則新生無法登入）
+    try {
+      await repo.adminSyncRoster(adminPassword, students.map(s => ({ student_id: s.student_id, student_name: s.name })))
+    } catch { /* 同步失敗不影響後台登入；學生端首次登入會提示洽行政人員 */ }
     return bundle
   }
 
@@ -123,17 +125,24 @@ export function useCampData() {
   }
 
   const unlockStudent = async (studentId: string) => {
-    await repo.adminUnlockStudent(requireAdminPassword(), studentId)
+    const key = keyOfId(studentId)
+    if (!key) return
+    await repo.adminUnlockStudent(requireAdminPassword(), key, studentId)
     await refreshAdminProfiles()
   }
 
+  /** 重設為預設密碼＝該生「目前的學號」 */
   const resetStudentPassword = async (studentId: string) => {
-    await repo.adminResetStudentPassword(requireAdminPassword(), studentId)
+    const key = keyOfId(studentId)
+    if (!key) return
+    await repo.adminResetStudentPassword(requireAdminPassword(), key, studentId)
     await refreshAdminProfiles()
   }
 
   const adminSaveContacts = async (studentId: string, contacts: EmergencyContact[]) => {
-    await repo.adminSetContacts(requireAdminPassword(), studentId, contacts)
+    const key = keyOfId(studentId)
+    if (!key) return
+    await repo.adminSetContacts(requireAdminPassword(), key, contacts, studentId)
     await refreshAdminProfiles()
   }
 
@@ -142,7 +151,10 @@ export function useCampData() {
     const v = validateRegistration(student, camp, camp.dates[0], regs, camps, { profile, settings })
     if (!v.ok) return v
     const base = {
-      id: crypto.randomUUID(), student_id: student.student_id, camp_id: camp.id,
+      id: crypto.randomUUID(),
+      student_name: normName(student.name),          // 報名紀錄以姓名為鍵（跟著學生走）
+      snapshot_student_id: student.student_id,        // 報名當下的學號快照，僅供行政查閱
+      camp_id: camp.id,
       created_at: new Date().toISOString(), leave_dates: [] as string[],
     }
     let r: Registration = { ...base, status: v.waitlist ? 'waitlisted' : 'enrolled' }
@@ -249,48 +261,58 @@ export function useCampData() {
     setSettings(next)
   }
 
-  const clearStudentPii = (studentId?: string | null) => {
-    if (!studentId) {
+  /** 清除記憶體中的個資：不帶參數＝全部；帶姓名鍵＝只清該生 */
+  const clearStudentPii = (nameKey?: string | null) => {
+    if (!nameKey) {
       setProfiles([])
       return
     }
-    setProfiles(prev => prev.filter(p => p.student_id !== studentId))
+    setProfiles(prev => prev.filter(p => p.student_name !== nameKey))
   }
 
   /** 後台：取消某學生所有有效報名（正取與候補），保留紀錄與取消時間 */
   const adminCancelRegistrations = async (studentId: string) => {
     const now = new Date().toISOString()
     const next = regs
-      .filter(r => r.student_id === studentId && (r.status === 'enrolled' || r.status === 'waitlisted'))
+      .filter(r => r.student_name === keyOfId(studentId) && (r.status === 'enrolled' || r.status === 'waitlisted'))
       .map(r => ({ ...r, status: 'cancelled' as const, cancelled_at: now }))
     if (!next.length) return
     await repo.upsertRegs(next)
     setRegs(p => p.map(x => next.find(n => n.id === x.id) ?? x))
   }
 
-  /** 手足綁定：驗證兩個帳號；B 尚無聯絡人時由伺服器複製 A 的聯絡人 */
+  /** 手足綁定：以姓名驗證兩個帳號；B 尚無聯絡人時由伺服器複製 A 的聯絡人 */
   const addSibling = async (a: { id: string; password: string }, b: { id: string; password: string }): Promise<BindSiblingResult> => {
-    const r = await repo.bindSibling(a, b)
+    const na = keyOfId(a.id), nb = keyOfId(b.id)
+    if (!na || !nb) return { success: false, message: '查無此學號' }
+    if (duplicateNames.includes(na) || duplicateNames.includes(nb)) return { success: false, message: DUPLICATE_NAME_MESSAGE }
+    const r = await repo.bindSibling({ name: na, id: a.id, password: a.password }, { name: nb, id: b.id, password: b.password })
     if (r.success) {
-      upsertLocalProfile({ student_id: b.id, failed_attempts: 0, is_locked: false, emergency_contacts: r.emergency_contacts })
+      upsertLocalProfile({ student_name: nb, failed_attempts: 0, is_locked: false, emergency_contacts: r.emergency_contacts })
     } else if (r.is_locked && r.who === 'B') {
-      upsertLocalProfile({ student_id: b.id, failed_attempts: 5, is_locked: true, emergency_contacts: getProfile(b.id).emergency_contacts })
+      upsertLocalProfile({ student_name: nb, failed_attempts: 5, is_locked: true, emergency_contacts: getProfile(b.id).emergency_contacts })
     }
     return r
   }
 
-  /** 忘記密碼：學號 + 主要聯絡人電話 */
-  const resetPasswordByPhone = (studentId: string, phone: string, newPassword: string): Promise<ResetPasswordResult> =>
-    repo.resetPasswordByPhone(studentId.trim(), phone, newPassword)
+  /** 忘記密碼：輸入學號 → 查出姓名 → 以「姓名 + 主要聯絡人電話」驗證 */
+  /** newPassword 為 null＝重設回預設密碼（目前學號）；有值＝自訂新密碼 */
+  const resetPasswordByPhone = (studentId: string, phone: string, newPassword: string | null): Promise<ResetPasswordResult> => {
+    const key = keyOfId(studentId.trim())
+    if (!key || duplicateNames.includes(key)) {
+      return Promise.resolve({ success: false, message: '驗證失敗：學號或主要聯絡人電話不符。連續錯誤多次將暫停此功能 30 分鐘。' })
+    }
+    return repo.resetPasswordByPhone(key, phone, newPassword, studentId.trim())
+  }
 
-  /** 學生登入成功後：丟棄後台載入的全校個資，只保留該生自己的 */
-  const keepOnlyProfile = (studentId: string) => setProfiles(prev => prev.filter(p => p.student_id === studentId))
+  /** 學生登入成功後：丟棄後台載入的全校個資，只保留該生自己的（以姓名鍵） */
+  const keepOnlyProfile = (nameKey: string) => setProfiles(prev => prev.filter(p => p.student_name === nameKey))
 
   return {
     students, camps, regs, profiles, settings, loading,
     getProfile, loginStudent, changeStudentPassword, saveEmergencyContacts,
     verifyAdmin, unlockStudent, resetStudentPassword, adminSaveContacts,
-    enroll, cancel, promoteWaitlist, adminCancelRegistrations, keepOnlyProfile, addSibling, resetPasswordByPhone, teacherPins, requestLeave, setSubClass, autoAssign: runAutoAssign,
+    enroll, cancel, promoteWaitlist, adminCancelRegistrations, keepOnlyProfile, addSibling, resetPasswordByPhone, teacherPins, duplicateNames, requestLeave, setSubClass, autoAssign: runAutoAssign,
     saveCamp, deleteCamp, saveSettings, reloadPublic, clearStudentPii, refreshAdminProfiles,
   }
 }

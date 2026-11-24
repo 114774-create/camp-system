@@ -6,7 +6,8 @@ import { readAdminSession, writeAdminSession } from './lib/auth'
 import { activateAdmin, activateStudent } from './lib/session'
 import { parseRoute } from './lib/route'
 import { duplicateTemplate } from './lib/sessions'
-import { addSession, MAX_SESSIONS, nextActiveId, removeSession, StudentSession, updatePassword } from './lib/siblings'
+import { addSession, MAX_SESSIONS, nextActiveName, removeSession, StudentSession, updatePassword } from './lib/siblings'
+import { normName } from './lib/name'
 import AppShell from './components/ui/AppShell'
 import AlertBanner from './components/ui/AlertBanner'
 import SiblingBar from './components/ui/SiblingBar'
@@ -33,36 +34,42 @@ function AppInner() {
   const [editing, setEditing] = useState<Camp | null | 'new'>(null)
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => readAdminSession())
   // 學生登入狀態僅存在記憶體（可同時登入多位手足）：重整後必須重新輸入密碼，避免個資殘留
+  // 以「正規化姓名」為鍵（學號每年會變）；studentId 是目前學號，用來查報名紀錄
   const [sessions, setSessions] = useState<StudentSession[]>([])
-  const [activeId, setActiveId] = useState<string | null>(null)
-  const loggedInStudentId = activeId
-  const studentSessionPassword = sessions.find(s => s.id === activeId)?.password ?? ''
+  const [activeName, setActiveName] = useState<string | null>(null)
+  const studentSessionPassword = sessions.find(s => s.name === activeName)?.password ?? ''
 
   const requestTab = (next: Tab) => { setTab(next); setEditing(null) }
   const showAdminGate = ADMIN_TABS.includes(tab) && !isAdminAuthenticated
   const rp = { students: d.students, camps: d.camps, regs: d.regs, profiles: d.profiles }
-  const student = loggedInStudentId ? d.students.find(s => s.student_id === loggedInStudentId) : undefined
+  const student = activeName ? d.students.find(s => normName(s.name) === activeName) : undefined
+  const loggedInStudentId = student?.student_id ?? null
+  const siblingItems = sessions.map(s => {
+    const st = d.students.find(x => normName(x.name) === s.name)
+    return { key: s.name, label: st ? `${st.classCode}-${st.no} ${st.name}` : s.studentId }
+  })
 
   /** 前後台互斥：登出所有學生（記憶體狀態 + 個資） */
-  const logoutStudent = () => { d.clearStudentPii(); setSessions([]); setActiveId(null) }
+  const logoutStudent = () => { d.clearStudentPii(); setSessions([]); setActiveName(null) }
 
-  const removeSibling = (id: string) => {
-    const rest = removeSession(sessions, id)
-    setSessions(rest); setActiveId(nextActiveId(rest, activeId, id)); d.clearStudentPii(id)
+  const removeSibling = (name: string) => {
+    const rest = removeSession(sessions, name)
+    setSessions(rest); setActiveName(nextActiveName(rest, activeName, name)); d.clearStudentPii(name)
     if (!rest.length) setTab('front')
   }
 
   const addSibling = async (sibId: string, sibPwd: string) => {
-    const a = sessions.find(s => s.id === activeId)
+    const a = sessions.find(s => s.name === activeName)
     const id = sibId.trim()
     if (!a) return { ok: false, message: '請先登入' }
     if (sessions.length >= MAX_SESSIONS) return { ok: false, message: `最多同時綁定 ${MAX_SESSIONS} 位學生` }
-    if (sessions.some(s => s.id === id)) return { ok: false, message: '這位學生已經在切換列中' }
     const sib = d.students.find(s => s.student_id === id)
     if (!sib) return { ok: false, message: '查無此學號' }
-    const r = await d.addSibling({ id: a.id, password: a.password }, { id, password: sibPwd })
+    const key = normName(sib.name)   // 手足以「姓名」寫入前端狀態
+    if (sessions.some(s => s.name === key)) return { ok: false, message: '這位學生已經在切換列中' }
+    const r = await d.addSibling({ id: a.studentId, password: a.password }, { id, password: sibPwd })
     if (!r.success) return { ok: false, message: r.message }
-    setSessions(l => addSession(l, { id, password: sibPwd })); setActiveId(id)
+    setSessions(l => addSession(l, { name: key, studentId: id, password: sibPwd })); setActiveName(key)
     return { ok: true, message: r.copied ? `已新增 ${sib.classCode}-${sib.no}，並把目前帳號的緊急聯絡人同步給他／她` : `已新增 ${sib.classCode}-${sib.no}，已切換為此帳號` }
   }
 
@@ -89,7 +96,7 @@ function AppInner() {
             onVerify={async (password) => {
               await d.verifyAdmin(password) // 成功後後台已載入全校資料（也會覆蓋學生個資）
               activateAdmin(password)       // 寫入後台工作階段，並清除 storage 內的學生登入殘留
-              setSessions([]); setActiveId(null)  // 互斥：後台登入成功 → 自動登出所有學生
+              setSessions([]); setActiveName(null)  // 互斥：後台登入成功 → 自動登出所有學生
               setIsAdminAuthenticated(true)
             }}
           />
@@ -98,11 +105,10 @@ function AppInner() {
         {!showAdminGate && STUDENT_TABS.includes(tab) && sessions.length > 0 && (
           <div className="mb-4">
             <SiblingBar
-              students={d.students}
-              sessionIds={sessions.map(s => s.id)}
-              activeId={activeId}
+              items={siblingItems}
+              activeKey={activeName}
               maxReached={sessions.length >= MAX_SESSIONS}
-              onSwitch={setActiveId}
+              onSwitch={setActiveName}
               onRemove={removeSibling}
               onAdd={addSibling}
             />
@@ -120,8 +126,9 @@ function AppInner() {
               if (!r.ok) return { ok: false as const, message: r.message, locked: r.locked }
               activateStudent()               // 互斥：學生登入成功 → 自動登出後台（兩種 storage 都清）
               setIsAdminAuthenticated(false)
-              d.keepOnlyProfile(id)           // 丟棄後台載入的全校個資，只留本人
-              setSessions([{ id, password }]); setActiveId(id)
+              const key = normName(d.students.find(s => s.student_id === id)?.name)
+              d.keepOnlyProfile(key)          // 丟棄後台載入的全校個資，只留本人（以姓名鍵）
+              setSessions([{ name: key, studentId: id, password }]); setActiveName(key)
               return { ok: true as const }
             }}
             onLogout={logoutStudent}
@@ -143,12 +150,12 @@ function AppInner() {
               sessionPassword={studentSessionPassword}
               onSaveContacts={async (contacts, currentPassword) => {
                 const r = await d.saveEmergencyContacts(student.student_id, currentPassword, contacts)
-                if (r.success) setSessions(l => updatePassword(l, student.student_id, currentPassword))
+                if (r.success) setSessions(l => updatePassword(l, normName(student.name), currentPassword))
                 return r
               }}
               onChangePassword={async (studentId, currentPassword, next) => {
                 const r = await d.changeStudentPassword(studentId, currentPassword, next)
-                if (r.success) setSessions(l => updatePassword(l, studentId, next))
+                if (r.success) setSessions(l => updatePassword(l, normName(student.name), next))
                 return r
               }}
             />
@@ -176,6 +183,7 @@ function AppInner() {
           <StudentAdmin
             students={d.students}
             profiles={d.profiles}
+            duplicateNames={d.duplicateNames}
             regs={d.regs}
             onCancelAllRegs={d.adminCancelRegistrations}
             getProfile={d.getProfile}

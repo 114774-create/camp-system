@@ -26,7 +26,7 @@ export default function ContactsPage({
 
   useEffect(() => {
     setList(profile.emergency_contacts.length ? profile.emergency_contacts : [blank()])
-  }, [profile.student_id, profile.emergency_contacts])
+  }, [profile.student_name, profile.emergency_contacts])
 
   useEffect(() => { setPwd(sessionPassword) }, [sessionPassword])
 

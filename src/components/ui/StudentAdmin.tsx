@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { KeyRound, LockOpen, Plus, Save, ShieldAlert, Trash2, UserMinus, XCircle } from 'lucide-react'
 import { EmergencyContact, Registration, Student, StudentProfileView } from '../../types'
 import { cleanContacts, contactIssues } from '../../lib/phone'
+import { normName } from '../../lib/name'
 import { useI18n } from '../../lib/I18nContext'
 import { displayStudentName } from '../../lib/maskName'
 import { clsName } from '../../lib/report'
@@ -11,6 +12,7 @@ const blank = (): EmergencyContact => ({ name: '', relation: '', phone: '', is_p
 export default function StudentAdmin({
   students,
   profiles,
+  duplicateNames = [],
   regs,
   onCancelAllRegs,
   getProfile,
@@ -20,6 +22,8 @@ export default function StudentAdmin({
 }: {
   students: Student[]
   profiles: StudentProfileView[]
+  /** 名單中正規化後同名的姓名（姓名是密碼與聯絡人的唯一鍵，同名者無法登入） */
+  duplicateNames?: string[]
   regs: Registration[]
   onCancelAllRegs: (id: string) => Promise<void>
   getProfile: (id: string) => StudentProfileView
@@ -51,6 +55,13 @@ export default function StudentAdmin({
         <h2 className="section-title">{locale === 'en' ? 'All students & emergency contacts' : '全校學生與緊急聯絡人管理'}</h2>
         <p className="mt-1 text-sm text-slate-500">{locale === 'en' ? 'Unlock accounts, reset passwords, edit contacts.' : '解鎖帳號、重設密碼、代為編輯緊急聯絡人。'}</p>
       </div>
+      {duplicateNames.length > 0 && (
+        <p role="alert" className="rounded-xl border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
+          {locale === 'en'
+            ? `Duplicate names detected (${duplicateNames.join(', ')}). Passwords and contacts are keyed by name, so these students cannot sign in until resolved.`
+            : `偵測到同名同姓：${duplicateNames.join('、')}。密碼與聯絡人以姓名為鍵，這些學生目前無法登入（避免互相看到對方資料），請另行處理。`}
+        </p>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <select className="input-field !w-auto" value={cc} onChange={e => setCc(e.target.value)}>
@@ -72,7 +83,7 @@ export default function StudentAdmin({
           <tbody>
             {list.map(s => {
               const p = getProfile(s.student_id)
-              const activeRegs = regs.filter(r => r.student_id === s.student_id && (r.status === 'enrolled' || r.status === 'waitlisted')).length
+              const activeRegs = regs.filter(r => r.student_name === normName(s.name) && (r.status === 'enrolled' || r.status === 'waitlisted')).length
               return (
                 <tr key={s.student_id} className="align-top hover:bg-orange-50/40">
                   <td className="border-b border-slate-100 px-3 py-2 font-mono text-xs">{s.student_id}</td>

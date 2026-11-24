@@ -1,5 +1,5 @@
 // 分頁 A：營隊報名與首頁（教學 + 登入 + 可報名營隊）。密碼修改已移至「聯絡人資料與設定」，報名狀態已移至「我的報名狀態」。
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertCircle, IdCard, LogOut, Sparkles, Ticket, UserRound } from 'lucide-react'
 import { Camp, Registration, ResetPasswordResult, Student, StudentProfileView, PublicSettings } from '../../types'
 import { BtnKind, buttonState, canCancelOrEnroll, GRADUATE_MESSAGE, isSummerCamp, md, validateRegistration, VResult } from '../../lib/validate'
@@ -8,6 +8,9 @@ import { displayStudentName } from '../../lib/maskName'
 import { enrolledCount, waitlistOf } from '../../lib/waitlist'
 import { useI18n } from '../../lib/I18nContext'
 import GuideCard from './GuideCard'
+import { normName } from '../../lib/name'
+import RegistrationCountdown from './RegistrationCountdown'
+import { useNow } from '../../hooks/useCountdown'
 import ForgotPasswordPanel from './ForgotPasswordPanel'
 import Notice from './Notice'
 
@@ -24,7 +27,7 @@ export interface FrontPageProps {
   onEnroll: (s: Student, c: Camp) => Promise<VResult>
   onNavigate?: (tab: 'status' | 'profile') => void
   /** 忘記密碼：學號 + 主要聯絡人電話 */
-  onResetPassword: (studentId: string, phone: string, newPassword: string) => Promise<ResetPasswordResult>
+  onResetPassword: (studentId: string, phone: string, newPassword: string | null) => Promise<ResetPasswordResult>
 }
 
 function capacityTone(n: number, max: number) {
@@ -44,10 +47,22 @@ export default function FrontPage(p: FrontPageProps) {
 
   const stu = p.students.find(s => s.student_id === (p.loggedInStudentId || sid))
   const revealed = !!p.loggedInStudentId && p.loggedInStudentId === stu?.student_id
-  const myLive = p.regs.filter(r => r.student_id === p.loggedInStudentId)
+  const myKey = stu ? normName(stu.name) : ''
+  const myLive = revealed ? p.regs.filter(r => r.student_name === myKey) : []   // 以姓名過濾：升年級（學號改變）後仍看得到自己的紀錄
   const nEnrolled = myLive.filter(r => r.status === 'enrolled').length
   const nWait = myLive.filter(r => r.status === 'waitlisted').length
-  const windowOpen = canCancelOrEnroll(p.settings)
+  // 同一個時鐘驅動倒數面板與所有按鈕：跨過截止時間的那一秒，按鈕自動鎖定（不必重新整理）
+  const nowMs = useNow()
+  const nowDate = new Date(nowMs)
+  const windowOpen = canCancelOrEnroll(p.settings, nowDate)
+  const prevOpen = useRef(windowOpen)
+  useEffect(() => {
+    if (prevOpen.current && !windowOpen) {
+      setMsg(locale === 'en' ? 'Registration has just closed. All enroll / cancel buttons are now locked.' : '報名時間已截止，所有「報名」與「取消報名」按鈕已自動鎖定。')
+      setMsgOk(false)
+    }
+    prevOpen.current = windowOpen
+  }, [windowOpen, locale])
   const profile = p.loggedInStudentId ? p.getProfile(p.loggedInStudentId) : null
   const showMsg = (text: string, ok = false) => { setMsg(text); setMsgOk(ok) }
 
@@ -63,6 +78,7 @@ export default function FrontPage(p: FrontPageProps) {
 
   return (
     <div className="grid gap-5">
+      <RegistrationCountdown settings={p.settings} nowMs={nowMs} />
       <GuideCard />
 
       <section className="relative overflow-hidden rounded-2xl border border-amber-200/80 bg-gradient-to-br from-orange-50 via-white to-amber-50 shadow-soft" aria-label={t('pass.title')}>
@@ -148,7 +164,7 @@ export default function FrontPage(p: FrontPageProps) {
           )}
           <div className="grid gap-3 sm:grid-cols-2">
             {p.camps.map(c => {
-              const v = validateRegistration(stu, c, c.dates[0], p.regs, p.camps, { profile: profile ?? undefined, settings: p.settings })
+              const v = validateRegistration(stu, c, c.dates[0], p.regs, p.camps, { profile: profile ?? undefined, settings: p.settings, now: nowDate })
               const b = buttonState(v)
               const n = enrolledCount(c.id, p.regs)
               const w = waitlistOf(c.id, p.regs).length

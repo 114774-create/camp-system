@@ -42,7 +42,7 @@ export default function R1Attendance(p: ReportProps) {
             ...rows.map((x, i) => [
               i + 1, x.s.classCode, x.s.no, x.s.student_id,
               displayStudentName(x.s, { locale, revealed: true }),
-              contactOf(x.s.student_id, p.profiles),
+              contactOf(x.s, p.profiles),
               ...c.dates.map(d => isLeaveDay(x.r, d) ? leaveMark : ''),
               '',
             ]),
@@ -74,7 +74,7 @@ export default function R1Attendance(p: ReportProps) {
               <td className="border p-1">{x.s.no}</td>
               <td className="border p-1">{x.s.student_id}</td>
               <td className="border p-1">{displayStudentName(x.s, { locale, revealed: true })}</td>
-              <td className="border p-1 text-xs">{contactOf(x.s.student_id, p.profiles)}</td>
+              <td className="border p-1 text-xs">{contactOf(x.s, p.profiles)}</td>
               {c.dates.map(d => (
                 <td key={d} className="border p-1 w-16 text-center text-xs text-rose-600">
                   {isLeaveDay(x.r, d) ? leaveMark : ''}

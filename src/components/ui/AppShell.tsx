@@ -3,6 +3,7 @@ import { Compass, Globe2, Lock, LogOut, Printer, Settings2, Sun, Tent, Ticket, U
 import { Tab } from '../../types'
 import { useI18n } from '../../lib/I18nContext'
 import { formatTaipei, registrationWindowStatus } from '../../lib/time'
+import { useNow } from '../../hooks/useCountdown'
 import { PublicSettings } from '../../types'
 
 const STUDENT_TABS: Tab[] = ['front', 'status', 'profile']
@@ -21,7 +22,8 @@ export default function AppShell({
 }) {
   const { t, locale, setLocale } = useI18n()
   const isReport = tab === 'r1' || tab === 'r2' || tab === 'r3'
-  const win = registrationWindowStatus(settings?.registration_start_at, settings?.registration_end_at)
+  const nowMs = useNow()
+  const win = registrationWindowStatus(settings?.registration_start_at, settings?.registration_end_at, nowMs)
 
   const go = (next: Tab) => onTab(next)
 
@@ -85,7 +87,7 @@ export default function AppShell({
                 : win.status === 'after' ? 'border-rose-200 bg-rose-50 text-rose-900'
                   : 'border-slate-200 bg-slate-50 text-slate-700'
           }`}>
-            {win.status === 'open' && t('window.open', { t: formatTaipei(win.endAt) })}
+            {win.status === 'open' && (win.endAt ? t('window.open', { t: formatTaipei(win.endAt) }) : t('window.unset'))}
             {win.status === 'before' && t('window.before', { t: formatTaipei(win.startAt) })}
             {win.status === 'after' && t('window.after')}
             {win.status === 'unset' && t('window.unset')}

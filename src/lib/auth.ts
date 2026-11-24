@@ -4,9 +4,9 @@ export const MAX_FAILED_ATTEMPTS = 5
 export const ADMIN_SESSION_KEY = 'camp_admin_auth'
 export const ADMIN_TOKEN_KEY = 'camp_admin_token'
 /** 僅供單元測試／顯示用的空視圖（不含密碼） */
-export function emptyProfileView(studentId: string): StudentProfileView {
+export function emptyProfileView(studentName: string): StudentProfileView {
   return {
-    student_id: studentId,
+    student_name: studentName,
     failed_attempts: 0,
     is_locked: false,
     emergency_contacts: [],

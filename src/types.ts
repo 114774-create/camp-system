@@ -18,7 +18,8 @@ export interface EmergencyContact {
 
 /** 前端可持有的學生個資視圖（不含 password_hash） */
 export interface StudentProfileView {
-  student_id: string
+  /** 正規化後的學生姓名（去除所有空白）——密碼與聯絡人的唯一鍵 */
+  student_name: string
   failed_attempts: number
   is_locked: boolean
   emergency_contacts: EmergencyContact[]
@@ -63,7 +64,10 @@ export type RegStatus = 'enrolled' | 'waitlisted' | 'cancelled'
 
 export interface Registration {
   id: string
-  student_id: string
+  /** 正規化姓名：報名紀錄「跟著學生走」，所有查詢與防呆比對都以此為準 */
+  student_name: string
+  /** 報名當下的學號快照，僅供行政查閱當時班級，不用於任何比對 */
+  snapshot_student_id?: string
   camp_id: string
   /** enrolled=正取；waitlisted=候補（依 created_at 先後遞補）；cancelled=已取消 */
   status: RegStatus
@@ -97,8 +101,8 @@ export type StudentLoginResult =
 
 // ─── 點名簿／手足／密碼重設 ───
 export type AttendStatus = 'present' | 'absent'
-export interface AttendanceMark { student_id: string; date: string; status: AttendStatus }
-export interface RosterEntry { student_id: string; assigned_sub_class?: string; leave_dates: string[] }
+export interface AttendanceMark { student_name: string; date: string; status: AttendStatus }
+export interface RosterEntry { student_name: string; snapshot_student_id?: string; assigned_sub_class?: string; leave_dates: string[] }
 export type TeacherRosterResult =
   | { success: true; camp: Camp; roster: RosterEntry[]; marks: AttendanceMark[] }
   | { success: false; message: string; locked?: boolean }
@@ -106,3 +110,4 @@ export type BindSiblingResult =
   | { success: true; copied: boolean; emergency_contacts: EmergencyContact[] }
   | { success: false; message: string; who?: 'A' | 'B'; is_locked?: boolean }
 export interface ResetPasswordResult { success: boolean; message: string; locked?: boolean }
+export interface RosterSyncResult { count: number; duplicates: string[] }

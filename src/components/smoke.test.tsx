@@ -16,14 +16,16 @@ import SiblingBar from './ui/SiblingBar'
 import ForgotPasswordPanel from './ui/ForgotPasswordPanel'
 import SettingsForm from './ui/SettingsForm'
 import TeacherRollCall from './teacher/TeacherRollCall'
+import StudentAdmin from './ui/StudentAdmin'
+import RegistrationCountdown from './ui/RegistrationCountdown'
 import { emptyProfileView } from '../lib/auth'
 
 const camp = { id: 'a', term: 'T', season: 'summer', name: '桌遊營', attendance_mode: 'full_course', dates: ['2026-07-06', '2026-07-07'], start_time: '09:00', end_time: '12:00', allowed_grades: [1, 2, 3, 4, 5, 6], max_capacity: 1, ignore_time_conflict: false, allow_concurrent_with: [], has_sub_classes: false, sub_classes: [], location: '會議室', teacher: '王老師', notes: '' } as Camp
 const s1: Student = { student_id: '10101', grade: 1, classCode: '101', no: 1, name: '王小明' }
 const s2: Student = { student_id: '10102', grade: 1, classCode: '101', no: 2, name: '李小華' }
 const regs: Registration[] = [
-  { id: 'r1', student_id: '10101', camp_id: 'a', status: 'enrolled', created_at: '2026-07-01T00:00:00Z' },
-  { id: 'r2', student_id: '10102', camp_id: 'a', status: 'waitlisted', created_at: '2026-07-02T00:00:00Z' },
+  { id: 'r1', student_name: '王小明', snapshot_student_id: '10101', camp_id: 'a', status: 'enrolled', created_at: '2026-07-01T00:00:00Z' },
+  { id: 'r2', student_name: '李小華', snapshot_student_id: '10102', camp_id: 'a', status: 'waitlisted', created_at: '2026-07-02T00:00:00Z' },
 ]
 const wrap = (el: JSX.Element) => renderToString(<I18nProvider>{el}</I18nProvider>)
 const noop = async () => ({ ok: true as const })
@@ -87,10 +89,10 @@ describe('render smoke', () => {
     for (const k of ['學號', '主要聯絡人電話', '新密碼', '30 分鐘']) expect(html).toContain(k)
   })
   it('手足切換列：顯示各孩子標籤與「新增手足帳號」', () => {
-    const html = wrap(<SiblingBar students={[s1, s2]} sessionIds={['10101', '10102']} activeId="10102" maxReached={false}
+    const html = wrap(<SiblingBar items={[{ key: '王小明', label: '101-1 王小明' }, { key: '李小華', label: '101-2 李小華' }]} activeKey="李小華" maxReached={false}
       onSwitch={() => {}} onRemove={() => {}} onAdd={async () => ({ ok: true, message: '' })} />)
     expect(html).toContain('101-1'); expect(html).toContain('101-2'); expect(html).toContain('新增手足帳號'); expect(html).toContain('aria-selected="true"')
-    expect(wrap(<SiblingBar students={[s1]} sessionIds={['10101']} activeId="10101" maxReached onSwitch={() => {}} onRemove={() => {}} onAdd={async () => ({ ok: true, message: '' })} />)).not.toContain('新增手足帳號')
+    expect(wrap(<SiblingBar items={[{ key: '王小明', label: '101-1 王小明' }]} activeKey="王小明" maxReached onSwitch={() => {}} onRemove={() => {}} onAdd={async () => ({ ok: true, message: '' })} />)).not.toContain('新增手足帳號')
   })
   it('公告橫幅：啟用且有內容才顯示', () => {
     expect(renderToString(<AlertBanner message="因颱風停課" active />)).toContain('因颱風停課')
@@ -112,5 +114,59 @@ describe('render smoke', () => {
   it('營隊表單：教師 PIN 欄位（新增模式自動帶入 4 碼）', () => {
     const html = wrap(<CampForm initial={null} onSave={() => {}} onCancel={() => {}} />)
     expect(html).toContain('教師點名 PIN'); expect(html).toMatch(/maxLength="4"|maxlength="4"/i)
+  })
+  it('後台學生管理：偵測到同名同姓時顯示警告', () => {
+    const props = { students: [s1], profiles: [], regs: [], onCancelAllRegs: async () => {}, getProfile: emptyProfileView, onUnlock: async () => {}, onResetPassword: async () => {}, onSaveContacts: async () => {} }
+    expect(wrap(<StudentAdmin {...props} duplicateNames={['王小明']} />)).toContain('偵測到同名同姓：王小明')
+    expect(wrap(<StudentAdmin {...props} />)).not.toContain('偵測到同名同姓')
+  })
+  describe('報名倒數面板', () => {
+    const H = 3600_000, D = 24 * H
+    const NOW = Date.UTC(2026, 10, 20, 0, 0, 0)
+    const st = (startOffset: number | null, endOffset: number | null) => ({
+      id: 'default', term_name: 'T', global_alert_message: '', global_alert_active: false,
+      registration_start_at: startOffset === null ? '' : new Date(NOW + startOffset).toISOString(),
+      registration_end_at: endOffset === null ? '' : new Date(NOW + endOffset).toISOString(),
+    })
+    const html = (s: ReturnType<typeof st>, now = NOW) => wrap(<RegistrationCountdown settings={s} nowMs={now} />)
+    it('狀態 A 尚未開放：藍色，顯示距離開放時間', () => {
+      const h = html(st(2 * D + 3 * H + 4 * 60_000 + 5_000, 10 * D))
+      expect(h).toContain('⏳ 距離報名開放還有：'); expect(h).toContain('data-phase="upcoming"'); expect(h).toContain('sky')
+      expect(h).toContain('>2<'); expect(h).toContain('>03<'); expect(h).toContain('>04<'); expect(h).toContain('>05<')
+    })
+    it('狀態 B 倒數截止：大於 3 天綠色；1～3 天橘色；不含呼吸閃爍', () => {
+      const calm = html(st(-D, 10 * D)), soon = html(st(-D, 2 * D))
+      expect(calm).toContain('🔥 距離報名截止剩餘：'); expect(calm).toContain('emerald'); expect(calm).not.toContain('camp-breath')
+      expect(soon).toContain('orange'); expect(soon).not.toContain('camp-breath')
+    })
+    it('狀態 B 最後 24 小時：紅色＋呼吸閃爍；恰好 24 小時還不算', () => {
+      const urgent = html(st(-D, 23 * H + 59 * 60_000))
+      expect(urgent).toContain('data-phase="urgent"'); expect(urgent).toContain('camp-breath'); expect(urgent).toContain('red-'); expect(urgent).toContain('最後 24 小時')
+      expect(html(st(-D, D))).not.toContain('camp-breath')
+      expect(html(st(-D, D - 1000))).toContain('camp-breath')
+    })
+    it('狀態 C 已截止：顯示截止訊息，隱藏跳動數字；截止當下（歸零瞬間）即為截止', () => {
+      const closed = html(st(-10 * D, -D))
+      expect(closed).toContain('🚫 本期報名已全面截止'); expect(closed).not.toContain('role="timer"'); expect(closed).not.toContain('小時')
+      expect(html(st(-D, 0))).toContain('🚫 本期報名已全面截止')
+      expect(html(st(-D, 1000))).toContain('role="timer"')
+    })
+    it('沒有設定報名期間時不顯示面板；只設截止時間也能倒數', () => {
+      expect(html(st(null, null))).toBe('')
+      expect(html(st(null, 5 * D))).toContain('🔥 距離報名截止剩餘：')
+    })
+  })
+  it('倒數歸零後：前台所有「報名」按鈕鎖定、顯示已截止（不需重新整理）', () => {
+    const past = new Date(Date.now() - 3600_000).toISOString()
+    const html = wrap(<FrontPage students={[s1]} camps={[camp]} regs={[]} loggedInStudentId="10101"
+      settings={{ id: 'default', term_name: 'T', registration_start_at: new Date(Date.now() - 86400_000).toISOString(), registration_end_at: past, global_alert_message: '', global_alert_active: false }}
+      getProfile={id => ({ ...emptyProfileView(id), emergency_contacts: [{ name: '王小美', relation: '母', phone: '0912345678', is_primary: true }] })}
+      onLogin={async () => ({ ok: true })} onLogout={() => {}} onEnroll={noop} onResetPassword={async () => ({ success: true, message: '' })} />)
+    expect(html).toContain('🚫 本期報名已全面截止')
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>報名已截止<\/button>/)
+  })
+  it('忘記密碼面板：新密碼為選填，留空＝重設為預設密碼', () => {
+    const h = wrap(<ForgotPasswordPanel onReset={async () => ({ success: true, message: '' })} />)
+    expect(h).toContain('新密碼（選填）'); expect(h).toContain('留空＝重設回預設密碼')
   })
 })

@@ -1,15 +1,13 @@
 // 手足帳號切換列：一次登入多位孩子，點頂部標籤即可切換身分
 import { useState } from 'react'
 import { Plus, UserRound, X } from 'lucide-react'
-import { Student } from '../../types'
-import { displayStudentName } from '../../lib/maskName'
 import { useI18n } from '../../lib/I18nContext'
 import Notice from './Notice'
 
 export interface SiblingBarProps {
-  students: Student[]
-  sessionIds: string[]
-  activeId: string | null
+  /** key＝正規化姓名（學號每年會變，姓名才是穩定的鍵） */
+  items: { key: string; label: string }[]
+  activeKey: string | null
   maxReached: boolean
   onSwitch: (id: string) => void
   onRemove: (id: string) => void
@@ -22,19 +20,15 @@ export default function SiblingBar(p: SiblingBarProps) {
   const [open, setOpen] = useState(false)
   const [id, setId] = useState(''), [pwd, setPwd] = useState('')
   const [msg, setMsg] = useState(''), [ok, setOk] = useState(false), [busy, setBusy] = useState(false)
-  const label = (sid: string) => {
-    const s = p.students.find(x => x.student_id === sid)
-    return s ? `${s.classCode}-${s.no} ${displayStudentName(s, { locale, revealed: true })}` : sid
-  }
   return (
     <section className="no-print rounded-2xl border border-sky-200 bg-sky-50/70 p-3" aria-label={en ? 'Sibling accounts' : '手足帳號'}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-semibold text-sky-800">{en ? 'Switch child:' : '切換孩子：'}</span>
         <div role="tablist" className="flex flex-wrap gap-2">
-          {p.sessionIds.map(sid => (
-            <span key={sid} className={`inline-flex items-center overflow-hidden rounded-xl border text-sm font-semibold ${sid === p.activeId ? 'border-orange-500 bg-orange-500 text-white' : 'border-sky-200 bg-white text-slate-700'}`}>
-              <button type="button" role="tab" aria-selected={sid === p.activeId} className="inline-flex items-center gap-1.5 px-3 py-1.5" onClick={() => p.onSwitch(sid)}>
-                <UserRound className="h-3.5 w-3.5" aria-hidden />{label(sid)}
+          {p.items.map(({ key: sid, label }) => (
+            <span key={sid} className={`inline-flex items-center overflow-hidden rounded-xl border text-sm font-semibold ${sid === p.activeKey ? 'border-orange-500 bg-orange-500 text-white' : 'border-sky-200 bg-white text-slate-700'}`}>
+              <button type="button" role="tab" aria-selected={sid === p.activeKey} className="inline-flex items-center gap-1.5 px-3 py-1.5" onClick={() => p.onSwitch(sid)}>
+                <UserRound className="h-3.5 w-3.5" aria-hidden />{label}
               </button>
               <button type="button" aria-label={en ? 'Remove' : '移除'} className="px-2 py-1.5 opacity-70 hover:opacity-100" onClick={() => p.onRemove(sid)}><X className="h-3.5 w-3.5" /></button>
             </span>

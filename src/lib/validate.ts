@@ -1,6 +1,7 @@
 import { Camp, Registration, Student, StudentProfileView, PublicSettings } from '../types'
 import { hasValidEmergencyContacts } from './auth'
 import { formatTaipei, nowInTaipei, registrationWindowStatus } from './time'
+import { normName } from './name'
 
 export type VFailCode = 'GRADE' | 'GRADUATE' | 'FULL' | 'CONFLICT' | 'GROUP' | 'DUP' | 'WAITLISTED' | 'CONTACT' | 'WINDOW' | 'LOCKED'
 /** ok + waitlist:true 代表「可報名，但名額已滿，將排入候補」 */
@@ -39,7 +40,8 @@ export function validateRegistration(
   const camp = (id: string) => allCamps.find(c => c.id === id)
   // 正取與候補都算「有效報名」：用於重複、單日擇一、衝堂檢核，避免候補轉正後才發現衝堂
   const live = existingRegistrations.filter(r => r.status === 'enrolled' || r.status === 'waitlisted')
-  const mine = live.filter(r => r.student_id === student.student_id)
+  const me = normName(student.name)   // 一律以姓名辨識（學號每年會變）
+  const mine = live.filter(r => r.student_name === me)
   // 夏令營採舊學年資料：六年級（畢業生）一律不可報名，即使營隊設定為不限年級
   if (isSummerCamp(target) && student.grade === 6) return fail('GRADUATE', GRADUATE_MESSAGE)
   if (!target.allowed_grades.includes(student.grade)) return fail('GRADE', '年級不符')

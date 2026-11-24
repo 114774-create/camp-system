@@ -3,7 +3,7 @@ import { Camp, Registration } from '../types'
 import { canPromote, enrolledCount, seatsLeft, waitlistOf, waitlistPosition } from './waitlist'
 const camp = { id: 'a', max_capacity: 2 } as Camp
 const r = (id: string, status: Registration['status'], created_at: string, camp_id = 'a'): Registration =>
-  ({ id, student_id: id, camp_id, status, created_at })
+  ({ id, student_name: id, camp_id, status, created_at })
 describe('waitlist', () => {
   const regs = [r('e1', 'enrolled', '2026-07-01T00:00:00Z'), r('w2', 'waitlisted', '2026-07-03T00:00:00Z'), r('w1', 'waitlisted', '2026-07-02T00:00:00Z'),
     r('x', 'cancelled', '2026-07-01T00:00:00Z'), r('o', 'waitlisted', '2026-07-01T00:00:00Z', 'other')]

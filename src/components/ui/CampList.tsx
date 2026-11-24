@@ -6,6 +6,7 @@ import { useI18n } from '../../lib/I18nContext'
 import { canPromote, waitlistOf } from '../../lib/waitlist'
 import { VResult } from '../../lib/validate'
 import { teacherLink } from '../../lib/route'
+import { studentIndex } from '../../lib/name'
 import Notice from './Notice'
 
 export interface CampListProps {
@@ -121,10 +122,10 @@ export default function CampList(p: CampListProps) {
                   <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-amber-900"><Hourglass className="h-4 w-4" aria-hidden />{t('admin.waitlist')}（{wait.length}）</p>
                   <ol className="grid gap-2">
                     {wait.map((r, i) => {
-                      const s = p.students.find(x => x.student_id === r.student_id)
+                      const s = studentIndex(p.students).get(r.student_name)
                       return (
                         <li key={r.id} className="flex flex-col gap-2 rounded-xl border border-white bg-white/90 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-                          <span className="text-sm font-medium">#{i + 1}　{s ? `${s.classCode}-${s.no} ${s.name}` : r.student_id}<span className="ml-2 text-xs text-slate-400">{new Date(r.created_at).toLocaleString(locale === 'en' ? 'en-US' : 'zh-TW', { hour12: false })}</span></span>
+                          <span className="text-sm font-medium">#{i + 1}　{s ? `${s.classCode}-${s.no} ${s.name}` : r.student_name}<span className="ml-2 text-xs text-slate-400">{new Date(r.created_at).toLocaleString(locale === 'en' ? 'en-US' : 'zh-TW', { hour12: false })}</span></span>
                           <button type="button" disabled={!seatOpen} title={!seatOpen ? t('admin.noSeat') : undefined}
                             className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
                             onClick={async () => { const v = await p.onPromote(r.id); setWok(v.ok); setWmsg(v.ok ? t('admin.promoted') : v.message) }}>

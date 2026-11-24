@@ -100,7 +100,7 @@ const dict = {
   'leave.mark': { 'zh-TW': '請假', en: 'Leave' },
   'guide.title': { 'zh-TW': '家長與學生使用教學', en: 'Quick guide for parents & students' },
   'guide.login.title': { 'zh-TW': '① 登入', en: '① Sign in' },
-  'guide.login.body': { 'zh-TW': '選擇班級與學生，密碼預設為「5 碼學號」（例如 10101）。登入後請至「聯絡人資料與設定」修改密碼並填寫緊急聯絡人。連續輸入錯誤 5 次會鎖定，請洽學校行政人員解鎖。', en: 'Pick your class and student. The default password is the 5-digit student ID (e.g. 10101). After signing in, change your password and add emergency contacts under "Contacts & Settings". 5 wrong attempts lock the account; contact the school office.' },
+  'guide.login.body': { 'zh-TW': '選擇班級與學生，密碼預設為「5 碼學號」（例如 10101）。登入後請至「聯絡人資料與設定」修改密碼並填寫緊急聯絡人。升上新年級後學號會改變，但密碼與聯絡人會自動保留（系統以學生姓名綁定）。連續輸入錯誤 5 次會鎖定，請洽學校行政人員解鎖。', en: 'Pick your class and student. The default password is the 5-digit student ID (e.g. 10101). After signing in, change your password and add emergency contacts under "Contacts & Settings". Your password and contacts carry over to the next school year (they are tied to the student name). 5 wrong attempts lock the account; contact the school office.' },
   'guide.steps': { 'zh-TW': '報名三步驟', en: '3 steps to enroll' },
   'guide.s1': { 'zh-TW': '選營隊', en: 'Pick a camp' },
   'guide.s1d': { 'zh-TW': '在下方「可報名營隊」挑選符合年級與時間的營隊。', en: 'Choose a camp matching the grade and schedule below.' },

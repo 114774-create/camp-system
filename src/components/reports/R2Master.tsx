@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ReportProps, byClassNo, contactOf, enrolledJoin, isLeaveDay } from '../../lib/report'
 import { md } from '../../lib/validate'
+import { normName } from '../../lib/name'
 import { useI18n } from '../../lib/I18nContext'
 import { displayStudentName } from '../../lib/maskName'
 
@@ -10,7 +11,7 @@ export default function R2Master(p: ReportProps) {
   const dates = useMemo(() => [...new Set(p.camps.flatMap(c => c.dates))].sort(), [p.camps])
   const [d, setD] = useState(dates[0])
   const all = p.camps.flatMap(c => enrolledJoin(c.id, p).map(x => ({ ...x, c })))
-  const stus = [...new Map(all.map(x => [x.s.student_id, x.s])).values()].sort(byClassNo)
+  const stus = [...new Map(all.map(x => [normName(x.s.name), x.s])).values()].sort(byClassNo)
   const leaveMark = t('leave.mark')
 
   return (
@@ -41,7 +42,7 @@ export default function R2Master(p: ReportProps) {
                 <td className="border p-1">{x.s.classCode}</td>
                 <td className="border p-1">{x.s.no}</td>
                 <td className="border p-1">{displayStudentName(x.s, { locale, revealed: true })}</td>
-                <td className="border p-1 text-xs">{contactOf(x.s.student_id, p.profiles)}</td>
+                <td className="border p-1 text-xs">{contactOf(x.s, p.profiles)}</td>
                 <td className="border p-1">
                   {x.c.name}{x.r.assigned_sub_class ?? ''}
                   {isLeaveDay(x.r, d) ? `（${leaveMark}）` : ''}
@@ -62,13 +63,13 @@ export default function R2Master(p: ReportProps) {
           </thead>
           <tbody>
             {stus.map(s => (
-              <tr key={s.student_id}>
+              <tr key={normName(s.name)}>
                 <td className="border p-1">
                   {s.classCode}-{s.no} {displayStudentName(s, { locale, revealed: true })}
-                  <div className="text-[10px] text-slate-500">{contactOf(s.student_id, p.profiles)}</div>
+                  <div className="text-[10px] text-slate-500">{contactOf(s, p.profiles)}</div>
                 </td>
                 {dates.map(x => {
-                  const h = all.find(a => a.s.student_id === s.student_id && a.c.dates.includes(x))
+                  const h = all.find(a => normName(a.s.name) === normName(s.name) && a.c.dates.includes(x))
                   if (!h) return <td key={x} className="border p-1" />
                   return (
                     <td key={x} className="border p-1 text-center">

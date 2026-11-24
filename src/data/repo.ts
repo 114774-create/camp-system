@@ -1,10 +1,11 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import {
   AttendStatus, BindSiblingResult, Camp, EmergencyContact, PublicSettings, Registration, ResetPasswordResult,
-  StudentLoginResult, StudentProfileView, TeacherRosterResult,
+  RosterSyncResult, StudentLoginResult, StudentProfileView, TeacherRosterResult,
 } from '../types'
 import { generatePin, isValidPin } from '../lib/pin'
 import { isValidContact } from '../lib/phone'
+import { DUPLICATE_NAME_MESSAGE, normName } from '../lib/name'
 import { DEFAULT_LOCAL_SETTINGS_STORE, DEFAULT_PUBLIC_SETTINGS, LocalSettingsStore, SEED } from './seed'
 import { LOCAL_ADMIN_PASSWORD_SHA256, matchesLocalHash, sha256Hex } from '../lib/localCrypto'
 
@@ -22,18 +23,23 @@ export interface Repo {
   upsertRegs(r: Registration[]): Promise<void>
 
   getPublicSettings(): Promise<PublicSettings>
-  verifyStudentLogin(studentId: string, password: string): Promise<StudentLoginResult>
+  /** 學生以「姓名」為鍵；studentId 僅用於首次登入（預設密碼＝目前學號，並由名單驗證學號↔姓名） */
+  verifyStudentLogin(studentName: string, password: string, studentId?: string): Promise<StudentLoginResult>
   updateStudentProfile(
-    studentId: string,
+    studentName: string,
     currentPassword: string,
     newPassword: string | null,
     emergencyContacts: EmergencyContact[] | null,
+    studentId?: string,
   ): Promise<StudentLoginResult & { updated?: boolean }>
 
   verifyAdminAndFetchAll(adminPassword: string): Promise<AdminBundle>
-  adminUnlockStudent(adminPassword: string, studentId: string): Promise<void>
-  adminResetStudentPassword(adminPassword: string, studentId: string): Promise<void>
-  adminSetContacts(adminPassword: string, studentId: string, contacts: EmergencyContact[]): Promise<void>
+  adminUnlockStudent(adminPassword: string, studentName: string, studentId?: string): Promise<void>
+  /** 重設為預設密碼＝該生「目前的學號」 */
+  adminResetStudentPassword(adminPassword: string, studentName: string, studentId: string): Promise<void>
+  adminSetContacts(adminPassword: string, studentName: string, contacts: EmergencyContact[], studentId?: string): Promise<void>
+  /** 後台登入時把 Google 試算表名單同步進資料庫（首次登入以此驗證學號↔姓名） */
+  adminSyncRoster(adminPassword: string, students: { student_id: string; student_name: string }[]): Promise<RosterSyncResult>
   adminSaveSettings(
     adminPassword: string,
     patch: {
@@ -48,22 +54,24 @@ export interface Repo {
   adminPromoteWaitlist(adminPassword: string, regId: string): Promise<void>
 
   /** 忘記密碼：學號 + 主要緊急聯絡人電話 */
-  resetPasswordByPhone(studentId: string, phone: string, newPassword: string): Promise<ResetPasswordResult>
-  /** 手足綁定：驗證兩個帳號；B 沒有聯絡人時自動複製 A 的 */
-  bindSibling(a: { id: string; password: string }, b: { id: string; password: string }): Promise<BindSiblingResult>
+  /** newPassword 為 null＝重設回預設密碼（目前學號，has_custom_password=false）；有值＝家長自訂新密碼（true） */
+  resetPasswordByPhone(studentName: string, phone: string, newPassword: string | null, studentId?: string): Promise<ResetPasswordResult>
+  /** 手足綁定：以姓名驗證兩個帳號；B 沒有聯絡人時自動複製 A 的 */
+  bindSibling(a: { name: string; id: string; password: string }, b: { name: string; id: string; password: string }): Promise<BindSiblingResult>
   /** 教師點名簿（以營隊 PIN 驗證） */
   teacherRoster(campId: string, pin: string): Promise<TeacherRosterResult>
-  teacherMark(campId: string, pin: string, studentId: string, date: string, status: AttendStatus | null): Promise<{ success: boolean; message?: string }>
+  teacherMark(campId: string, pin: string, studentName: string, date: string, status: AttendStatus | null): Promise<{ success: boolean; message?: string }>
 }
 
 // ─── localStorage 內部結構（含 hash，永不當作公開 API 回傳）───
 
 interface LocalProfileRow {
-  student_id: string
+  student_name: string
   password_hash: string
   failed_attempts: number
   is_locked: boolean
-  emergency_contacts: EmergencyContact[]
+  emergency_contacts: EmergencyContact[]  /** false＝沒改過密碼，預設密碼＝目前學號；舊資料（無此欄位）保守視為 true */
+  has_custom_password?: boolean
 }
 
 const ls = <T,>(k: string, init: T): T => {
@@ -79,7 +87,7 @@ const saveLs = (k: string, v: unknown) => localStorage.setItem(k, JSON.stringify
 
 function toView(r: LocalProfileRow): StudentProfileView {
   return {
-    student_id: r.student_id,
+    student_name: r.student_name,
     failed_attempts: r.failed_attempts,
     is_locked: r.is_locked,
     emergency_contacts: r.emergency_contacts ?? [],
@@ -93,15 +101,15 @@ function getLocalSettings(): LocalSettingsStore {
 }
 
 function getLocalProfiles(): LocalProfileRow[] {
-  return ls<LocalProfileRow[]>('camp_profiles_secure', [])
+  return ls<LocalProfileRow[]>('camp_profiles_by_name', [])
 }
 
 function saveLocalProfile(p: LocalProfileRow) {
   const list = getLocalProfiles()
-  const next = list.some(x => x.student_id === p.student_id)
-    ? list.map(x => x.student_id === p.student_id ? p : x)
+  const next = list.some(x => x.student_name === p.student_name)
+    ? list.map(x => x.student_name === p.student_name ? p : x)
     : [...list, p]
-  saveLs('camp_profiles_secure', next)
+  saveLs('camp_profiles_by_name', next)
 }
 
 async function localAssertAdmin(adminPassword: string) {
@@ -113,7 +121,7 @@ async function localAssertAdmin(adminPassword: string) {
 
 // ─── 本機示範：教師 PIN／點名／忘記密碼計次（邏輯與 schema.sql 對應）───
 interface LocalPinRow { pin: string; failed: number; lockedUntil: number }
-interface LocalMark { camp_id: string; student_id: string; date: string; status: AttendStatus }
+interface LocalMark { camp_id: string; student_name: string; date: string; status: AttendStatus }
 const PIN_MAX_FAILS = 8, PIN_LOCK_MS = 15 * 60_000, RESET_MAX_FAILS = 5, RESET_LOCK_MS = 30 * 60_000
 const RESET_GENERIC = '驗證失敗：學號或主要聯絡人電話不符。連續錯誤多次將暫停此功能 30 分鐘。'
 const getPins = () => ls<Record<string, LocalPinRow>>('camp_teacher_pins', {})
@@ -136,16 +144,21 @@ function localTeacherCheck(campId: string, pin: string): { ok: true } | { ok: fa
   return { ok: false, message: `PIN 錯誤（尚可嘗試 ${PIN_MAX_FAILS - (r.failed + 1)} 次）` }
 }
 
+interface LocalRosterRow { student_id: string; student_name: string }
+const getRoster = () => ls<LocalRosterRow[]>('camp_roster', [])
+const NO_RECORD_MSG = '查無此學生資料，請洽學校行政人員（學生名單可能尚未同步）'
+const dupCount = (roster: LocalRosterRow[], key: string) => roster.filter(r => r.student_name === key).length
+
 const localRepo: Repo = {
   async listCamps() { return ls('camp_camps', SEED) },
   async listRegs() {
-    return ls<Registration[]>('camp_regs', []).map(r => ({ ...r, leave_dates: r.leave_dates ?? [] }))
+    return ls<Registration[]>('camp_regs_by_name', []).map(r => ({ ...r, leave_dates: r.leave_dates ?? [] }))
   },
   async upsertRegs(rs) {
-    const l = ls<Registration[]>('camp_regs', [])
+    const l = ls<Registration[]>('camp_regs_by_name', [])
     const m = new Map(l.map(x => [x.id, x]))
     rs.forEach(r => m.set(r.id, { ...r, leave_dates: r.leave_dates ?? [] }))
-    saveLs('camp_regs', [...m.values()])
+    saveLs('camp_regs_by_name', [...m.values()])
   },
 
   async getPublicSettings() {
@@ -160,47 +173,50 @@ const localRepo: Repo = {
     }
   },
 
-  async verifyStudentLogin(studentId, password) {
-    const id = studentId.trim()
-    let row = getLocalProfiles().find(p => p.student_id === id)
+  async verifyStudentLogin(studentName, password, studentId) {
+    const key = normName(studentName)
+    const id = (studentId ?? '').trim()
+    if (!key) return { success: false, remaining_attempts: 0, is_locked: true, message: '無效的學生資料' }
+    const roster = getRoster()
+    if (dupCount(roster, key) > 1) return { success: false, remaining_attempts: 0, is_locked: false, message: DUPLICATE_NAME_MESSAGE }
+    let row = getLocalProfiles().find(p => p.student_name === key)
 
     if (!row) {
+      // 首次登入：名單非空時必須「學號↔姓名」相符（對應 schema.sql）；名單為空僅限本機示範
+      if (!id || (roster.length && !roster.some(r => r.student_id === id && r.student_name === key))) {
+        return { success: false, remaining_attempts: 0, is_locked: false, message: NO_RECORD_MSG }
+      }
       if (password === id) {
-        row = {
-          student_id: id,
-          password_hash: await sha256Hex(password),
-          failed_attempts: 0,
-          is_locked: false,
-          emergency_contacts: [],
-        }
+        row = { student_name: key, password_hash: await sha256Hex(password), failed_attempts: 0, is_locked: false, emergency_contacts: [], has_custom_password: false }
         saveLocalProfile(row)
         return { success: true, is_locked: false, remaining_attempts: 5, emergency_contacts: [] }
       }
-      row = {
-        student_id: id,
-        password_hash: await sha256Hex(id),
-        failed_attempts: 1,
-        is_locked: false,
-        emergency_contacts: [],
-      }
-      saveLocalProfile(row)
+      saveLocalProfile({ student_name: key, password_hash: await sha256Hex(id), failed_attempts: 1, is_locked: false, emergency_contacts: [], has_custom_password: false })
       return { success: false, remaining_attempts: 4, is_locked: false, message: '密碼錯誤（尚可嘗試 4 次）' }
     }
 
     if (row.is_locked) {
       return {
         success: false, remaining_attempts: 0, is_locked: true,
-        message: '密碼錯誤已達 5 次，帳號已鎖定，請聯繫學校行政人員由後台解鎖',
+        message: '密碼錯誤已達 5 次，帳號已鎖定，請使用「忘記密碼／帳號解鎖」或聯繫學校行政人員',
       }
     }
 
-    if (await matchesLocalHash(password, row.password_hash)) {
+    let ok: boolean
+    if (row.has_custom_password ?? true) {
+      ok = await matchesLocalHash(password, row.password_hash)
+    } else {
+      // 沒改過密碼：預設密碼＝目前學號，且名單非空時必須確認「學號↔姓名」相符（對應 schema.sql；否則任何人都能傳 id=password）
+      if (!id || (roster.length && !roster.some(r => r.student_id === id && r.student_name === key))) {
+        return { success: false, remaining_attempts: 5 - row.failed_attempts, is_locked: false, message: NO_RECORD_MSG }
+      }
+      ok = password === id
+    }
+
+    if (ok) {
       row = { ...row, failed_attempts: 0 }
       saveLocalProfile(row)
-      return {
-        success: true, is_locked: false, remaining_attempts: 5,
-        emergency_contacts: row.emergency_contacts ?? [],
-      }
+      return { success: true, is_locked: false, remaining_attempts: 5, emergency_contacts: row.emergency_contacts ?? [] }
     }
 
     const attempts = row.failed_attempts + 1
@@ -211,26 +227,24 @@ const localRepo: Repo = {
       remaining_attempts: Math.max(0, 5 - attempts),
       is_locked: locked,
       message: locked
-        ? '密碼錯誤已達 5 次，帳號已鎖定，請聯繫學校行政人員由後台解鎖'
+        ? '密碼錯誤已達 5 次，帳號已鎖定，請使用「忘記密碼／帳號解鎖」或聯繫學校行政人員'
         : `密碼錯誤（尚可嘗試 ${5 - attempts} 次）`,
     }
   },
 
-  async updateStudentProfile(studentId, currentPassword, newPassword, emergencyContacts) {
-    const login = await this.verifyStudentLogin(studentId, currentPassword)
+  async updateStudentProfile(studentName, currentPassword, newPassword, emergencyContacts, studentId) {
+    const key = normName(studentName)
+    const login = await this.verifyStudentLogin(key, currentPassword, studentId)
     if (!login.success) return { ...login, updated: false }
-    let row = getLocalProfiles().find(p => p.student_id === studentId)!
+    let row = getLocalProfiles().find(p => p.student_name === key)!
     if (newPassword && newPassword.trim().length >= 4) {
-      row = { ...row, password_hash: await sha256Hex(newPassword), failed_attempts: 0 }
+      row = { ...row, password_hash: await sha256Hex(newPassword), has_custom_password: true, failed_attempts: 0 }
     }
     if (emergencyContacts) {
       row = { ...row, emergency_contacts: emergencyContacts }
     }
     saveLocalProfile(row)
-    return {
-      success: true, is_locked: false, remaining_attempts: 5,
-      emergency_contacts: row.emergency_contacts, updated: true,
-    }
+    return { success: true, is_locked: false, remaining_attempts: 5, emergency_contacts: row.emergency_contacts, updated: true }
   },
 
   async verifyAdminAndFetchAll(adminPassword) {
@@ -245,40 +259,63 @@ const localRepo: Repo = {
     }
   },
 
-  async adminUnlockStudent(adminPassword, studentId) {
+  async adminUnlockStudent(adminPassword, studentName, studentId) {
     await localAssertAdmin(adminPassword)
-    const existing = getLocalProfiles().find(p => p.student_id === studentId)
+    const key = normName(studentName)
+    const existing = getLocalProfiles().find(p => p.student_name === key)
     saveLocalProfile({
-      student_id: studentId,
-      password_hash: existing?.password_hash ?? await sha256Hex(studentId),
+      student_name: key,
+      password_hash: existing?.password_hash ?? await sha256Hex(studentId ?? key),
+      has_custom_password: existing?.has_custom_password ?? false,
       failed_attempts: 0,
       is_locked: false,
       emergency_contacts: existing?.emergency_contacts ?? [],
     })
+    const att = ls<Record<string, unknown>>('camp_reset_attempts', {}); delete att[key]; saveLs('camp_reset_attempts', att)
   },
 
-  async adminResetStudentPassword(adminPassword, studentId) {
+  async adminResetStudentPassword(adminPassword, studentName, studentId) {
     await localAssertAdmin(adminPassword)
-    const existing = getLocalProfiles().find(p => p.student_id === studentId)
+    const key = normName(studentName)
+    if (!key || !studentId.trim()) throw new Error('INVALID_STUDENT')
+    const existing = getLocalProfiles().find(p => p.student_name === key)
     saveLocalProfile({
-      student_id: studentId,
+      student_name: key,
       password_hash: await sha256Hex(studentId),
+      has_custom_password: false,
       failed_attempts: 0,
       is_locked: false,
       emergency_contacts: existing?.emergency_contacts ?? [],
     })
+    const att = ls<Record<string, unknown>>('camp_reset_attempts', {}); delete att[key]; saveLs('camp_reset_attempts', att)
   },
 
-  async adminSetContacts(adminPassword, studentId, contacts) {
+  async adminSetContacts(adminPassword, studentName, contacts, studentId) {
     await localAssertAdmin(adminPassword)
-    const existing = getLocalProfiles().find(p => p.student_id === studentId)
+    const key = normName(studentName)
+    const existing = getLocalProfiles().find(p => p.student_name === key)
     saveLocalProfile({
-      student_id: studentId,
-      password_hash: existing?.password_hash ?? await sha256Hex(studentId),
+      student_name: key,
+      password_hash: existing?.password_hash ?? await sha256Hex(studentId ?? key),
+      has_custom_password: existing?.has_custom_password ?? false,
       failed_attempts: existing?.failed_attempts ?? 0,
       is_locked: existing?.is_locked ?? false,
       emergency_contacts: contacts,
     })
+  },
+
+  async adminSyncRoster(adminPassword, students) {
+    await localAssertAdmin(adminPassword)
+    const byId = new Map<string, LocalRosterRow>()
+    for (const s of students) {
+      const id = s.student_id.trim(), name = normName(s.student_name)
+      if (id && name && !byId.has(id)) byId.set(id, { student_id: id, student_name: name })
+    }
+    const roster = [...byId.values()]
+    saveLs('camp_roster', roster)
+    const counts = new Map<string, number>()
+    roster.forEach(r => counts.set(r.student_name, (counts.get(r.student_name) ?? 0) + 1))
+    return { count: roster.length, duplicates: [...counts].filter(([, n]) => n > 1).map(([k]) => k) }
   },
 
   async adminSaveSettings(adminPassword, patch) {
@@ -322,52 +359,60 @@ const localRepo: Repo = {
     await localAssertAdmin(adminPassword)
     saveLs('camp_camps', ls<Camp[]>('camp_camps', SEED).filter(x => x.id !== campId))
     const pins = getPins(); delete pins[campId]; saveLs('camp_teacher_pins', pins)
-    saveLs('camp_attendance', ls<LocalMark[]>('camp_attendance', []).filter(m => m.camp_id !== campId))
+    saveLs('camp_attendance_by_name', ls<LocalMark[]>('camp_attendance_by_name', []).filter(m => m.camp_id !== campId))
   },
 
   async adminPromoteWaitlist(adminPassword, regId) {
     await localAssertAdmin(adminPassword)
-    const regs = ls<Registration[]>('camp_regs', [])
+    const regs = ls<Registration[]>('camp_regs_by_name', [])
     const r = regs.find(x => x.id === regId)
     if (!r || r.status !== 'waitlisted') throw new Error('NOT_WAITLISTED')
     const camp = ls<Camp[]>('camp_camps', SEED).find(c => c.id === r.camp_id)
     const n = regs.filter(x => x.camp_id === r.camp_id && x.status === 'enrolled').length
     if (camp && n >= camp.max_capacity) throw new Error('CAMP_FULL')
-    saveLs('camp_regs', regs.map(x => x.id === regId ? { ...x, status: 'enrolled' as const } : x))
+    saveLs('camp_regs_by_name', regs.map(x => x.id === regId ? { ...x, status: 'enrolled' as const } : x))
   },
 
-  async resetPasswordByPhone(studentId, phone, newPassword) {
-    const id = studentId.trim()
-    if (!id || newPassword.trim().length < 4) return { success: false, message: '請輸入學號與電話，且新密碼至少 4 碼' }
-    const row = getLocalProfiles().find(p => p.student_id === id)
+  async resetPasswordByPhone(studentName, phone, newPassword, studentId) {
+    const key = normName(studentName)
+    if (!key || (newPassword !== null && newPassword.trim().length < 4)) return { success: false, message: '請輸入學號與電話，且新密碼至少 4 碼' }
+    if (dupCount(getRoster(), key) > 1) return { success: false, message: RESET_GENERIC }
+    const row = getLocalProfiles().find(p => p.student_name === key)
     if (!row) return { success: false, message: RESET_GENERIC }
     const att = ls<Record<string, { n: number; lockedUntil: number }>>('camp_reset_attempts', {})
-    const cur = att[id] ?? { n: 0, lockedUntil: 0 }
+    const cur = att[key] ?? { n: 0, lockedUntil: 0 }
     if (cur.lockedUntil > Date.now()) return { success: false, locked: true, message: '嘗試次數過多，此功能暫停 30 分鐘，請稍後再試或洽學校行政人員' }
     const list = row.emergency_contacts ?? []
     const primary = list.find(c => c.is_primary) ?? list[0]
-    const digits = (s: string) => s.replace(/[^0-9]/g, '')
+    const digits = (x: string) => x.replace(/[^0-9]/g, '')
     if (primary && digits(primary.phone) !== '' && digits(primary.phone) === digits(phone)) {
-      saveLocalProfile({ ...row, password_hash: await sha256Hex(newPassword), is_locked: false, failed_attempts: 0 })
-      delete att[id]; saveLs('camp_reset_attempts', att)
-      return { success: true, message: '密碼已重設，帳號已解鎖，請用新密碼登入' }
+      delete att[key]; saveLs('camp_reset_attempts', att)
+      if (newPassword !== null) {
+        saveLocalProfile({ ...row, password_hash: await sha256Hex(newPassword), has_custom_password: true, is_locked: false, failed_attempts: 0 })
+        return { success: true, message: '密碼已重設，帳號已解鎖，請用新密碼登入' }
+      }
+      const roster = getRoster()
+      const idOk = !!studentId && (!roster.length || roster.some(r => r.student_id === studentId && r.student_name === key))
+      saveLocalProfile({ ...row, password_hash: idOk ? await sha256Hex(studentId!) : row.password_hash, has_custom_password: false, is_locked: false, failed_attempts: 0 })
+      return { success: true, message: '已重設為預設密碼（目前的學號），帳號已解鎖。登入後請記得修改密碼' }
     }
-    att[id] = cur.n + 1 >= RESET_MAX_FAILS ? { n: 0, lockedUntil: Date.now() + RESET_LOCK_MS } : { n: cur.n + 1, lockedUntil: 0 }
+    att[key] = cur.n + 1 >= RESET_MAX_FAILS ? { n: 0, lockedUntil: Date.now() + RESET_LOCK_MS } : { n: cur.n + 1, lockedUntil: 0 }
     saveLs('camp_reset_attempts', att)
     return { success: false, message: RESET_GENERIC }
   },
 
   async bindSibling(a, b) {
-    if (!b.id.trim() || a.id === b.id) return { success: false, message: '請輸入另一位學生的學號' }
-    const la = await this.verifyStudentLogin(a.id, a.password)
+    const na = normName(a.name), nb = normName(b.name)
+    if (!na || !nb || na === nb) return { success: false, message: '請輸入另一位學生的學號' }
+    const la = await this.verifyStudentLogin(na, a.password, a.id)
     if (!la.success) return { success: false, message: la.message, who: 'A', is_locked: la.is_locked }
-    const lb = await this.verifyStudentLogin(b.id, b.password)
+    const lb = await this.verifyStudentLogin(nb, b.password, b.id)
     if (!lb.success) return { success: false, message: lb.message, who: 'B', is_locked: lb.is_locked }
     const ca = la.emergency_contacts ?? []
     let cb = lb.emergency_contacts ?? []
     let copied = false
     if (cb.length === 0 && ca.length > 0 && ca.every(isValidContact)) {
-      const row = getLocalProfiles().find(p => p.student_id === b.id)!
+      const row = getLocalProfiles().find(p => p.student_name === nb)!
       saveLocalProfile({ ...row, emergency_contacts: ca })
       cb = ca; copied = true
     }
@@ -379,23 +424,24 @@ const localRepo: Repo = {
     if (!chk.ok) return { success: false, message: chk.message, locked: chk.locked }
     const camp = ls<Camp[]>('camp_camps', SEED).find(c => c.id === campId)
     if (!camp) return { success: false, message: '查無此營隊，或尚未設定教師 PIN' }
-    const roster = ls<Registration[]>('camp_regs', [])
+    const roster = ls<Registration[]>('camp_regs_by_name', [])
       .filter(r => r.camp_id === campId && r.status === 'enrolled')
-      .map(r => ({ student_id: r.student_id, assigned_sub_class: r.assigned_sub_class, leave_dates: r.leave_dates ?? [] }))
-    const marks = ls<LocalMark[]>('camp_attendance', []).filter(m => m.camp_id === campId)
-      .map(m => ({ student_id: m.student_id, date: m.date, status: m.status }))
+      .map(r => ({ student_name: r.student_name, snapshot_student_id: r.snapshot_student_id, assigned_sub_class: r.assigned_sub_class, leave_dates: r.leave_dates ?? [] }))
+    const marks = ls<LocalMark[]>('camp_attendance_by_name', []).filter(m => m.camp_id === campId)
+      .map(m => ({ student_name: m.student_name, date: m.date, status: m.status }))
     return { success: true, camp, roster, marks }
   },
 
-  async teacherMark(campId, pin, studentId, date, status) {
+  async teacherMark(campId, pin, studentName, date, status) {
+    const name = normName(studentName)
     const chk = localTeacherCheck(campId, pin)
     if (!chk.ok) return { success: false, message: chk.message }
     const camp = ls<Camp[]>('camp_camps', SEED).find(c => c.id === campId)
     if (!camp?.dates.includes(date)) return { success: false, message: '此日期不在營隊上課日期內' }
-    const enrolled = ls<Registration[]>('camp_regs', []).some(r => r.camp_id === campId && r.student_id === studentId && r.status === 'enrolled')
+    const enrolled = ls<Registration[]>('camp_regs_by_name', []).some(r => r.camp_id === campId && r.student_name === name && r.status === 'enrolled')
     if (!enrolled) return { success: false, message: '此學生不在報名名單中' }
-    const rest = ls<LocalMark[]>('camp_attendance', []).filter(m => !(m.camp_id === campId && m.student_id === studentId && m.date === date))
-    saveLs('camp_attendance', status ? [...rest, { camp_id: campId, student_id: studentId, date, status }] : rest)
+    const rest = ls<LocalMark[]>('camp_attendance_by_name', []).filter(m => !(m.camp_id === campId && m.student_name === name && m.date === date))
+    saveLs('camp_attendance_by_name', status ? [...rest, { camp_id: campId, student_name: name, date, status }] : rest)
     return { success: true }
   },
 }
@@ -436,7 +482,8 @@ function mapLogin(raw: any): StudentLoginResult {
 
 const mapReg = (r: any): Registration => ({
   id: r.id,
-  student_id: r.student_id,
+  student_name: r.student_name,
+  snapshot_student_id: r.snapshot_student_id ?? undefined,
   camp_id: r.camp_id,
   status: r.status,
   assigned_sub_class: r.assigned_sub_class ?? undefined,
@@ -461,7 +508,8 @@ function createSupaRepo(sb: SupabaseClient): Repo {
     async upsertRegs(rs) {
       const rows = rs.map(r => ({
         id: r.id,
-        student_id: r.student_id,
+        student_name: normName(r.student_name),
+        snapshot_student_id: r.snapshot_student_id ?? null,
         camp_id: r.camp_id,
         status: r.status,
         assigned_sub_class: r.assigned_sub_class ?? null,
@@ -480,21 +528,23 @@ function createSupaRepo(sb: SupabaseClient): Repo {
       return mapPublicSettings(data)
     },
 
-    async verifyStudentLogin(studentId, password) {
+    async verifyStudentLogin(studentName, password, studentId) {
       const { data, error } = await sb.rpc('camp_verify_student_login', {
-        p_student_id: studentId,
+        p_student_name: normName(studentName),
         p_password: password,
+        p_student_id: studentId?.trim() || null,
       })
       if (error) rpcError(error)
       return mapLogin(data)
     },
 
-    async updateStudentProfile(studentId, currentPassword, newPassword, emergencyContacts) {
+    async updateStudentProfile(studentName, currentPassword, newPassword, emergencyContacts, studentId) {
       const { data, error } = await sb.rpc('camp_update_student_profile', {
-        p_student_id: studentId,
+        p_student_name: normName(studentName),
         p_current_password: currentPassword,
         p_new_password: newPassword,
         p_emergency_contacts: emergencyContacts,
+        p_student_id: studentId?.trim() || null,
       })
       if (error) rpcError(error)
       return { ...mapLogin(data), updated: !!data?.updated }
@@ -514,29 +564,35 @@ function createSupaRepo(sb: SupabaseClient): Repo {
       }
     },
 
-    async adminUnlockStudent(adminPassword, studentId) {
+    async adminUnlockStudent(adminPassword, studentName, studentId) {
       const { error } = await sb.rpc('camp_admin_unlock_student', {
-        p_admin_password: adminPassword,
-        p_student_id: studentId,
+        p_admin_password: adminPassword, p_student_name: normName(studentName), p_student_id: studentId ?? null,
       })
       if (error) rpcError(error)
     },
 
-    async adminResetStudentPassword(adminPassword, studentId) {
+    async adminResetStudentPassword(adminPassword, studentName, studentId) {
       const { error } = await sb.rpc('camp_admin_reset_student_password', {
-        p_admin_password: adminPassword,
-        p_student_id: studentId,
+        p_admin_password: adminPassword, p_student_name: normName(studentName), p_student_id: studentId,
       })
       if (error) rpcError(error)
     },
 
-    async adminSetContacts(adminPassword, studentId, contacts) {
+    async adminSetContacts(adminPassword, studentName, contacts, studentId) {
       const { error } = await sb.rpc('camp_admin_set_contacts', {
-        p_admin_password: adminPassword,
-        p_student_id: studentId,
-        p_emergency_contacts: contacts,
+        p_admin_password: adminPassword, p_student_name: normName(studentName),
+        p_emergency_contacts: contacts, p_student_id: studentId ?? null,
       })
       if (error) rpcError(error)
+    },
+
+    async adminSyncRoster(adminPassword, students) {
+      const { data, error } = await sb.rpc('camp_admin_sync_roster', {
+        p_admin_password: adminPassword,
+        p_students: students.map(s => ({ student_id: s.student_id, student_name: normName(s.student_name) })),
+      })
+      if (error) rpcError(error)
+      return { count: Number(data?.count ?? 0), duplicates: (data?.duplicates ?? []) as string[] }
     },
 
     async adminSaveSettings(adminPassword, patch) {
@@ -580,9 +636,9 @@ function createSupaRepo(sb: SupabaseClient): Repo {
       if (error) rpcError(error)
     },
 
-    async resetPasswordByPhone(studentId, phone, newPassword) {
+    async resetPasswordByPhone(studentName, phone, newPassword, studentId) {
       const { data, error } = await sb.rpc('camp_reset_student_password', {
-        p_id: studentId, p_phone: phone, p_new_password: newPassword,
+        p_student_name: normName(studentName), p_phone: phone, p_new_password: newPassword, p_student_id: studentId?.trim() || null,
       })
       if (error) rpcError(error)
       return { success: !!data?.success, message: data?.message ?? '重設失敗', locked: !!data?.locked }
@@ -590,7 +646,8 @@ function createSupaRepo(sb: SupabaseClient): Repo {
 
     async bindSibling(a, b) {
       const { data, error } = await sb.rpc('camp_bind_sibling', {
-        p_a_id: a.id, p_a_password: a.password, p_b_id: b.id, p_b_password: b.password,
+        p_a_name: normName(a.name), p_a_password: a.password, p_b_name: normName(b.name), p_b_password: b.password,
+        p_a_id: a.id, p_b_id: b.id,
       })
       if (error) rpcError(error)
       if (!data?.success) return { success: false, message: data?.message ?? '綁定失敗', who: data?.who, is_locked: !!data?.is_locked }
@@ -604,14 +661,14 @@ function createSupaRepo(sb: SupabaseClient): Repo {
       return {
         success: true,
         camp: data.camp as Camp,
-        roster: (data.roster ?? []).map((r: any) => ({ student_id: r.student_id, assigned_sub_class: r.assigned_sub_class ?? undefined, leave_dates: r.leave_dates ?? [] })),
+        roster: (data.roster ?? []).map((r: any) => ({ student_name: r.student_name, snapshot_student_id: r.snapshot_student_id ?? undefined, assigned_sub_class: r.assigned_sub_class ?? undefined, leave_dates: r.leave_dates ?? [] })),
         marks: data.marks ?? [],
       }
     },
 
-    async teacherMark(campId, pin, studentId, date, status) {
+    async teacherMark(campId, pin, studentName, date, status) {
       const { data, error } = await sb.rpc('camp_teacher_mark', {
-        p_camp_id: campId, p_pin: pin, p_student_id: studentId, p_date: date, p_status: status,
+        p_camp_id: campId, p_pin: pin, p_student_name: normName(studentName), p_date: date, p_status: status,
       })
       if (error) rpcError(error)
       return { success: !!data?.success, message: data?.message }

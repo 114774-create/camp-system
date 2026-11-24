@@ -5,7 +5,7 @@ import { autoAssign } from './assign'
 
 const mk = (o: Partial<Camp>): Camp => ({ id: 'x', term: 'T', season: 'summer', name: 'X', attendance_mode: 'full_course', dates: ['2026-07-06'], start_time: '09:00', end_time: '12:00', allowed_grades: [1, 2, 3, 4, 5, 6], max_capacity: 10, ignore_time_conflict: false, allow_concurrent_with: [], has_sub_classes: false, sub_classes: [], location: '', teacher: '', notes: '', ...o })
 const st = (id: string, grade: number): Student => ({ student_id: id, grade, classCode: `${grade}01`, no: 1, name: id })
-const reg = (sid: string, cid: string, status: Registration['status'] = 'enrolled'): Registration => ({ id: sid + cid, student_id: sid, camp_id: cid, status, created_at: '' })
+const reg = (sid: string, cid: string, status: Registration['status'] = 'enrolled'): Registration => ({ id: sid + cid, student_name: sid, camp_id: cid, status, created_at: '' })
 const code = (r: any) => (r.ok ? 'OK' : r.code)
 
 describe('validateRegistration', () => {
@@ -66,6 +66,25 @@ describe('validateRegistration', () => {
     expect(code(validateRegistration(st('s2', 1), d5, d5.dates[0], [reg('s1', 'd4')], [d4, d5]))).toBe('OK')
   })
 })
+describe('報名紀錄以姓名辨識（學號每年會變）', () => {
+  it('同一個人升年級換了學號：重複報名、單日擇一、衝堂防呆照樣生效', () => {
+    const a = mk({ id: 'a' }), b = mk({ id: 'b', start_time: '10:00', end_time: '11:00' })
+    const promoted = { ...st('小明', 2), student_id: '20101' }              // 去年學號 10101，今年 20101
+    const old: Registration = { ...reg('小明', 'a'), snapshot_student_id: '10101' }
+    expect(code(validateRegistration(promoted, a, a.dates[0], [old], [a]))).toBe('DUP')
+    expect(code(validateRegistration(promoted, b, b.dates[0], [old], [a, b]))).toBe('CONFLICT')
+  })
+  it('學號被別人沿用：新同學（不同姓名）不受舊紀錄影響', () => {
+    const a = mk({ id: 'a' })
+    const newcomer = { ...st('新生', 2), student_id: '10101' }               // 學號與去年的「小明」相同
+    const old: Registration = { ...reg('小明', 'a'), snapshot_student_id: '10101' }
+    expect(code(validateRegistration(newcomer, a, a.dates[0], [old], [a]))).toBe('OK')
+  })
+  it('姓名中的空白不影響比對', () => {
+    const a = mk({ id: 'a' })
+    expect(code(validateRegistration({ ...st('王 小明', 2) }, a, a.dates[0], [reg('王小明', 'a')], [a]))).toBe('DUP')
+  })
+})
 describe('夏令營六年級阻擋', () => {
   const run = (grade: number, o: Partial<Camp>) => { const c = mk({ id: 'a', ...o }); return validateRegistration(st('s', grade), c, c.dates[0], [], [c]) }
   it('夏令營（season=summer）即使不限年級也禁止 6 年級，訊息明確', () => {
@@ -99,7 +118,7 @@ describe('autoAssign（年級排序 + S 型分配）', () => {
   })
   it('先依年級排序再分配（輸入順序打亂也一樣）', () => {
     const { out, ss } = run([3, 1, 2, 1, 3, 2], 2)
-    const byGrade = (g: number) => ss.filter(s => s.grade === g).map(s => out.find(r => r.student_id === s.student_id)!.assigned_sub_class).sort()
+    const byGrade = (g: number) => ss.filter(s => s.grade === g).map(s => out.find(r => r.student_name === s.name)!.assigned_sub_class).sort()
     // 每個年級各 2 人，S 型使其一人在 A、一人在 B
     expect([1, 2, 3].map(byGrade)).toEqual([['A', 'B'], ['A', 'B'], ['A', 'B']])
   })

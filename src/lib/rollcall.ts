@@ -1,4 +1,6 @@
 import { AttendanceMark, AttendStatus, RosterEntry, Student } from '../types'
+import { studentIndex } from './name'
+import { snapshotStudent } from './report'
 
 /** 台灣時區的今天（YYYY-MM-DD） */
 export const todayTaipei = (now = new Date()) =>
@@ -15,13 +17,14 @@ export function pickDefaultDate(dates: string[], today: string): string {
 export interface RollRow { student: Student; entry: RosterEntry; status?: AttendStatus; onLeave: boolean }
 
 export function buildRows(roster: RosterEntry[], students: Student[], marks: AttendanceMark[], date: string, subClass = ''): RollRow[] {
-  const byId = new Map(students.map(s => [s.student_id, s]))
+  const idx = studentIndex(students)
   return roster
     .filter(e => !subClass || e.assigned_sub_class === subClass)
     .map(entry => ({
       entry,
-      student: byId.get(entry.student_id) ?? { student_id: entry.student_id, grade: 0, classCode: '000', no: 0, name: entry.student_id },
-      status: marks.find(m => m.student_id === entry.student_id && m.date === date)?.status,
+      // 以姓名對應到「最新」學號與班級座號；名單找不到時用報名當下的學號快照
+      student: idx.get(entry.student_name) ?? snapshotStudent(entry),
+      status: marks.find(m => m.student_name === entry.student_name && m.date === date)?.status,
       onLeave: (entry.leave_dates ?? []).includes(date),
     }))
     .sort((a, b) => +a.student.classCode - +b.student.classCode || a.student.no - b.student.no)
@@ -33,7 +36,7 @@ export function summarize(rows: RollRow[]) {
   return { total: rows.length, present, absent, pending: rows.length - present - absent }
 }
 /** 套用一筆點名（status=null 代表清除） */
-export function applyMark(marks: AttendanceMark[], studentId: string, date: string, status: AttendStatus | null): AttendanceMark[] {
-  const rest = marks.filter(m => !(m.student_id === studentId && m.date === date))
-  return status ? [...rest, { student_id: studentId, date, status }] : rest
+export function applyMark(marks: AttendanceMark[], studentName: string, date: string, status: AttendStatus | null): AttendanceMark[] {
+  const rest = marks.filter(m => !(m.student_name === studentName && m.date === date))
+  return status ? [...rest, { student_name: studentName, date, status }] : rest
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { applyMark, buildRows, pickDefaultDate, summarize, todayTaipei } from './rollcall'
 import { parseRoute, teacherLink } from './route'
-import { addSession, nextActiveId, removeSession, updatePassword } from './siblings'
+import { addSession, nextActiveName, removeSession, updatePassword } from './siblings'
 const stu = (id: string, cls: string, no: number) => ({ student_id: id, grade: +cls[0], classCode: cls, no, name: `N${id}` })
 describe('點名簿輔助', () => {
   it('預設日期：今天在上課日→今天；否則最近的未來日；都過了→最後一天', () => {
@@ -12,21 +12,23 @@ describe('點名簿輔助', () => {
   })
   it('名單：依班級座號排序、帶入當日狀態與請假，可依分班篩選', () => {
     const roster = [
-      { student_id: 'b', assigned_sub_class: 'B', leave_dates: ['2026-12-05'] },
-      { student_id: 'a', assigned_sub_class: 'A', leave_dates: [] },
-      { student_id: 'z', leave_dates: [] },   // 不在學生名單
+      { student_name: 'Nb', assigned_sub_class: 'B', leave_dates: ['2026-12-05'] },
+      { student_name: 'Na', assigned_sub_class: 'A', leave_dates: [] },
+      { student_name: 'Nz', snapshot_student_id: '10105', leave_dates: [] },   // 不在學生名單
     ]
-    const marks = [{ student_id: 'a', date: '2026-12-05', status: 'present' as const }, { student_id: 'a', date: '2026-12-12', status: 'absent' as const }]
+    const marks = [{ student_name: 'Na', date: '2026-12-05', status: 'present' as const }, { student_name: 'Na', date: '2026-12-12', status: 'absent' as const }]
     const rows = buildRows(roster, [stu('a', '301', 2), stu('b', '201', 5)], marks, '2026-12-05')
-    expect(rows.map(r => r.student.student_id)).toEqual(['z', 'b', 'a'])
-    expect(rows.find(r => r.student.student_id === 'a')!.status).toBe('present')
-    expect(rows.find(r => r.student.student_id === 'b')!.onLeave).toBe(true)
-    expect(buildRows(roster, [], marks, '2026-12-05', 'A').map(r => r.student.student_id)).toEqual(['a'])
+    // z 不在名單 → 以報名當下的學號快照（10105 → 101 班 5 號）排最前；其餘以姓名對應到最新班級座號
+    expect(rows.map(r => r.student.name)).toEqual(['Nz', 'Nb', 'Na'])
+    expect(rows[0].student).toMatchObject({ classCode: '101', no: 5, student_id: '10105' })
+    expect(rows.find(r => r.student.name === 'Na')!.status).toBe('present')
+    expect(rows.find(r => r.student.name === 'Nb')!.onLeave).toBe(true)
+    expect(buildRows(roster, [], marks, '2026-12-05', 'A').map(r => r.student.name)).toEqual(['Na'])
     expect(summarize(rows)).toEqual({ total: 3, present: 1, absent: 0, pending: 2 })
   })
   it('套用點名：覆蓋、清除', () => {
     let m = applyMark([], 's', '2026-12-05', 'present')
-    m = applyMark(m, 's', '2026-12-05', 'absent'); expect(m).toEqual([{ student_id: 's', date: '2026-12-05', status: 'absent' }])
+    m = applyMark(m, 's', '2026-12-05', 'absent'); expect(m).toEqual([{ student_name: 's', date: '2026-12-05', status: 'absent' }])
     expect(applyMark(m, 's', '2026-12-05', null)).toEqual([])
   })
 })
@@ -37,12 +39,13 @@ describe('路由與手足工作階段', () => {
     expect(parseRoute('/')).toBeNull(); expect(parseRoute('/teacher-rollcall')).toBeNull()
     expect(teacherLink('a b', 'https://x.tw')).toBe('https://x.tw/teacher-rollcall/a%20b')
   })
-  it('新增／移除／改密碼／切換', () => {
-    let l = addSession([], { id: 'a', password: '1' })
-    l = addSession(l, { id: 'b', password: '2' }); expect(addSession(l, { id: 'b', password: 'x' })).toBe(l)
-    expect(updatePassword(l, 'b', 'new').find(s => s.id === 'b')!.password).toBe('new')
-    const rest = removeSession(l, 'a')
-    expect(nextActiveId(rest, 'a', 'a')).toBe('b'); expect(nextActiveId(rest, 'b', 'a')).toBe('b')
-    expect(nextActiveId([], 'b', 'b')).toBeNull()
+  it('以姓名為鍵：新增／移除／改密碼／切換', () => {
+    let l = addSession([], { name: '王小明', studentId: '10101', password: '1' })
+    l = addSession(l, { name: '李小華', studentId: '30102', password: '2' })
+    expect(addSession(l, { name: '李小華', studentId: '99999', password: 'x' })).toBe(l)   // 同姓名視為同一人（學號不同也一樣）
+    expect(updatePassword(l, '李小華', 'new').find(s => s.name === '李小華')!.password).toBe('new')
+    const rest = removeSession(l, '王小明')
+    expect(nextActiveName(rest, '王小明', '王小明')).toBe('李小華'); expect(nextActiveName(rest, '李小華', '王小明')).toBe('李小華')
+    expect(nextActiveName([], '李小華', '李小華')).toBeNull()
   })
 })

@@ -7,6 +7,8 @@ import { campLabel } from '../../lib/report'
 import { waitlistPosition } from '../../lib/waitlist'
 import { useI18n } from '../../lib/I18nContext'
 import Notice from './Notice'
+import { normName } from '../../lib/name'
+import { useNow } from '../../hooks/useCountdown'
 export interface StatusPageProps {
   student: Student; camps: Camp[]; regs: Registration[]; settings: PublicSettings | null
   onCancel: (regId: string) => Promise<VResult>
@@ -18,10 +20,11 @@ export default function StatusPage(p: StatusPageProps) {
   const [msg, setMsg] = useState(''), [ok, setOk] = useState(false)
   const [leaveFor, setLeaveFor] = useState<string | null>(null)
   const [leaveDates, setLeaveDates] = useState<string[]>([]), [leaveReason, setLeaveReason] = useState('')
-  const windowOpen = canCancelOrEnroll(p.settings)
+  const nowMs = useNow()   // 跨過截止時間時，「取消報名」按鈕自動鎖定
+  const windowOpen = canCancelOrEnroll(p.settings, new Date(nowMs))
   const show = (m: string, good = false) => { setMsg(m); setOk(good) }
   const rows = p.regs
-    .filter(r => r.student_id === p.student.student_id && (r.status === 'enrolled' || r.status === 'waitlisted'))
+    .filter(r => r.student_name === normName(p.student.name) && (r.status === 'enrolled' || r.status === 'waitlisted'))
     .map(r => ({ r, c: p.camps.find(x => x.id === r.camp_id) })).filter(x => x.c) as { r: Registration; c: Camp }[]
   rows.sort((a, b) => (a.c.dates[0] ?? '').localeCompare(b.c.dates[0] ?? ''))
   const nA = rows.filter(x => x.r.status === 'enrolled').length, nB = rows.length - nA

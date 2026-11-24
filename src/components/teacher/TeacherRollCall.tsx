@@ -44,12 +44,12 @@ export default function TeacherRollCall({ campId }: { campId: string }) {
   const rows = useMemo(() => data ? buildRows(data.roster, students, data.marks, date, sub) : [], [data, students, date, sub])
   const sum = summarize(rows)
 
-  const mark = async (studentId: string, current: AttendStatus | undefined, next: AttendStatus) => {
+  const mark = async (studentName: string, current: AttendStatus | undefined, next: AttendStatus) => {
     if (!data) return
     const target = current === next ? null : next            // 再點一次＝撤銷
     const before = data.marks
-    setData({ ...data, marks: applyMark(before, studentId, date, target) })   // 樂觀更新
-    const r = await repo.teacherMark(campId, pin, studentId, date, target)
+    setData({ ...data, marks: applyMark(before, studentName, date, target) })   // 樂觀更新
+    const r = await repo.teacherMark(campId, pin, studentName, date, target)
     if (!r.success) { setData(d => d && { ...d, marks: before }); setToast(r.message ?? '儲存失敗，請重試'); setTimeout(() => setToast(''), 3000) }
   }
 
@@ -114,16 +114,16 @@ export default function TeacherRollCall({ campId }: { campId: string }) {
 
         <ul className="mt-2 grid gap-3 px-3">
           {rows.map(({ student, entry, status, onLeave }) => (
-            <li key={entry.student_id} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+            <li key={entry.student_name} className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
               <div className="mb-2 flex items-baseline justify-between gap-2">
                 <span className="text-2xl font-bold text-slate-800">{student.name}</span>
                 <span className="shrink-0 text-sm text-slate-500">{student.classCode}-{student.no}{entry.assigned_sub_class ? `・${entry.assigned_sub_class}` : ''}</span>
               </div>
               {onLeave && <p className="mb-2 inline-block rounded-lg bg-amber-100 px-2 py-0.5 text-sm font-semibold text-amber-800">家長已請假</p>}
               <div className="grid grid-cols-2 gap-3">
-                <button type="button" aria-pressed={status === 'present'} onClick={() => mark(entry.student_id, status, 'present')}
+                <button type="button" aria-pressed={status === 'present'} onClick={() => mark(entry.student_name, status, 'present')}
                   className={`h-16 rounded-2xl text-xl font-bold ${status === 'present' ? 'bg-emerald-600 text-white' : 'border-2 border-emerald-600 text-emerald-700'}`}>✅ 簽到</button>
-                <button type="button" aria-pressed={status === 'absent'} onClick={() => mark(entry.student_id, status, 'absent')}
+                <button type="button" aria-pressed={status === 'absent'} onClick={() => mark(entry.student_name, status, 'absent')}
                   className={`h-16 rounded-2xl text-xl font-bold ${status === 'absent' ? 'bg-rose-600 text-white' : 'border-2 border-rose-600 text-rose-700'}`}>❌ 缺席</button>
               </div>
             </li>
