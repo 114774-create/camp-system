@@ -56,6 +56,9 @@ export interface Camp {
   location: string
   teacher: string
   notes: string
+  /** 此營隊自己的報名開放／截止時間（ISO）。留空＝沿用「系統設定」的預設時間；兩端可分別留空 */
+  registration_start_at?: string
+  registration_end_at?: string
   /** 教師點名簿 PIN（4 碼）。僅後台載入／儲存時存在；公開讀取的營隊資料絕不含此欄位 */
   teacher_pin?: string
 }

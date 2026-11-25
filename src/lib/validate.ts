@@ -1,6 +1,6 @@
 import { Camp, Registration, Student, StudentProfileView, PublicSettings } from '../types'
 import { hasValidEmergencyContacts } from './auth'
-import { formatTaipei, nowInTaipei, registrationWindowStatus } from './time'
+import { campWindowStatus, formatTaipei, nowInTaipei } from './time'
 import { normName } from './name'
 
 export type VFailCode = 'GRADE' | 'GRADUATE' | 'FULL' | 'CONFLICT' | 'GROUP' | 'DUP' | 'WAITLISTED' | 'CONTACT' | 'WINDOW' | 'LOCKED'
@@ -11,8 +11,8 @@ export const md = (d: string) => { const [, m, x] = d.split('-'); return `${+m}/
 const overlap = (a: Camp, b: Camp) => a.start_time < b.end_time && b.start_time < a.end_time
 
 /** existingRegistrations = 全校所有報名紀錄（用來算名額與學生既有報名） */
-/** 夏令營：檔期名稱含「夏令營」，或營隊類型為 summer */
-export const isSummerCamp = (c: Pick<Camp, 'term' | 'season'>) => c.season === 'summer' || (c.term ?? '').includes('夏令營')
+/** 夏令營：以「營隊類型（season）」為準。檔期名稱只是報表標題文字，不影響判斷（避免假日營的檔期名稱剛好含「夏令營」而擋掉六年級）；只有舊資料沒有 season 時才退回看檔期名稱 */
+export const isSummerCamp = (c: Pick<Camp, 'term' | 'season'>) => c.season ? c.season === 'summer' : (c.term ?? '').includes('夏令營')
 export const GRADUATE_MESSAGE = '六年級畢業生無法報名夏令營'
 
 export function validateRegistration(
@@ -25,7 +25,7 @@ export function validateRegistration(
 ): VResult {
   const fail = (code: VFailCode, message: string): VResult => ({ ok: false, code, message })
 
-  const win = registrationWindowStatus(opts?.settings?.registration_start_at, opts?.settings?.registration_end_at, opts?.now ?? nowInTaipei())
+  const win = campWindowStatus(target, opts?.settings, opts?.now ?? nowInTaipei())   // 營隊自己的時間優先，留空沿用系統預設
   if (win.status === 'before') {
     return fail('WINDOW', `尚未開放報名（開放時間：${formatTaipei(win.startAt)}）`)
   }
@@ -91,7 +91,8 @@ export function canRequestLeave(camp: Camp): boolean {
   return attendingDays(camp) >= 2
 }
 
-export function canCancelOrEnroll(settings?: PublicSettings | null, now = nowInTaipei()): boolean {
-  const win = registrationWindowStatus(settings?.registration_start_at, settings?.registration_end_at, now)
+/** camp 有帶入時，以該營隊的報名時間判斷；沒帶＝只看系統預設 */
+export function canCancelOrEnroll(settings?: PublicSettings | null, now = nowInTaipei(), camp?: Camp | null): boolean {
+  const win = campWindowStatus(camp, settings, now)
   return win.status === 'open' || win.status === 'unset'
 }

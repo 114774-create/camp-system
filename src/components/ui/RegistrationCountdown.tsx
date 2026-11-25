@@ -1,15 +1,15 @@
 // 即時報名倒數面板：尚未開放／倒數截止／已截止 三種狀態（時間一律以台灣時間 Asia/Taipei 為基準）
-import { PublicSettings } from '../../types'
+import { Camp, PublicSettings } from '../../types'
 import { useCountdown } from '../../hooks/useCountdown'
-import { DAY_MS, formatTaipei, registrationWindowStatus } from '../../lib/time'
+import { aggregateWindowStatus, DAY_MS, formatTaipei } from '../../lib/time'
 import { useI18n } from '../../lib/I18nContext'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
-export default function RegistrationCountdown({ settings, nowMs }: { settings: PublicSettings | null; nowMs: number }) {
+export default function RegistrationCountdown({ settings, nowMs, camps }: { settings: PublicSettings | null; nowMs: number; camps?: Camp[] }) {
   const { locale } = useI18n()
   const en = locale === 'en'
-  const win = registrationWindowStatus(settings?.registration_start_at, settings?.registration_end_at, nowMs)
+  const win = aggregateWindowStatus(camps ?? [], settings, nowMs)
   const target = win.status === 'before' ? win.startAt : win.status === 'open' && win.endAt ? win.endAt : null
   const cd = useCountdown(target, nowMs)
 

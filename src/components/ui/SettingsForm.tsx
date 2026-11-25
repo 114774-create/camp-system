@@ -23,16 +23,12 @@ export default function SettingsForm({
         <h2 className="section-title">{locale === 'en' ? 'System settings' : '系統設定'}</h2>
         <p className="mt-1 text-sm text-slate-500">
           {locale === 'en'
-            ? 'Registration window (Taiwan Standard Time). Admin password is never shown; enter a new one only when rotating.'
-            : '報名開放／截止（台灣標準時間）。後台密碼不會顯示於畫面；僅在要更換時填寫新密碼。'}
+            ? 'Default registration window (Taiwan Standard Time), used by every camp that has no period of its own. Admin password is never shown; enter a new one only when rotating.'
+            : '預設報名開放／截止（台灣標準時間）：沒有個別設定報名時間的營隊都用這組時間。若夏令營、假日營開放日期不同，請到各營隊的「編輯」頁設定。後台密碼不會顯示於畫面；僅在要更換時填寫新密碼。'}
         </p>
       </div>
 
       <div className="camp-card grid gap-3 p-4">
-        <label className="grid gap-1 text-sm font-medium">
-          {locale === 'en' ? 'Term name' : '檔期名稱'}
-          <input className="input-field" value={s.term_name} onChange={e => setS({ ...s, term_name: e.target.value })} />
-        </label>
         <label className="grid gap-1 text-sm font-medium">
           {locale === 'en' ? 'New admin password (optional)' : '新後台密碼（選填，留空則不變更）'}
           <input
@@ -45,7 +41,7 @@ export default function SettingsForm({
           />
         </label>
         <label className="grid gap-1 text-sm font-medium">
-          {locale === 'en' ? 'Registration opens (TST)' : '報名開放時間（台灣時間）'}
+          {locale === 'en' ? 'Default: registration opens (TST)' : '預設報名開放時間（台灣時間）'}
           <input
             type="datetime-local"
             className="input-field"
@@ -54,7 +50,7 @@ export default function SettingsForm({
           />
         </label>
         <label className="grid gap-1 text-sm font-medium">
-          {locale === 'en' ? 'Registration deadline (TST)' : '報名截止時間（台灣時間）'}
+          {locale === 'en' ? 'Default: registration deadline (TST)' : '預設報名截止時間（台灣時間）'}
           <input
             type="datetime-local"
             className="input-field"

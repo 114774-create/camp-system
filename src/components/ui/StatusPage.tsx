@@ -21,7 +21,7 @@ export default function StatusPage(p: StatusPageProps) {
   const [leaveFor, setLeaveFor] = useState<string | null>(null)
   const [leaveDates, setLeaveDates] = useState<string[]>([]), [leaveReason, setLeaveReason] = useState('')
   const nowMs = useNow()   // 跨過截止時間時，「取消報名」按鈕自動鎖定
-  const windowOpen = canCancelOrEnroll(p.settings, new Date(nowMs))
+  const nowDate = new Date(nowMs)
   const show = (m: string, good = false) => { setMsg(m); setOk(good) }
   const rows = p.regs
     .filter(r => r.student_name === normName(p.student.name) && (r.status === 'enrolled' || r.status === 'waitlisted'))
@@ -68,7 +68,7 @@ export default function StatusPage(p: StatusPageProps) {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button type="button" disabled={!windowOpen}
+                    <button type="button" disabled={!canCancelOrEnroll(p.settings, nowDate, c)}
                       className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-600 disabled:opacity-40"
                       onClick={async () => { const v = await p.onCancel(r.id); show(v.ok ? t('camp.cancelled') : v.message, v.ok) }}>
                       <XCircle className="h-4 w-4" />{waiting ? t('camp.cancelWait') : t('camp.cancel')}

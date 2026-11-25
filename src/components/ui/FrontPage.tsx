@@ -11,6 +11,7 @@ import GuideCard from './GuideCard'
 import { normName } from '../../lib/name'
 import RegistrationCountdown from './RegistrationCountdown'
 import { useNow } from '../../hooks/useCountdown'
+import { campWindow, formatTaipei } from '../../lib/time'
 import ForgotPasswordPanel from './ForgotPasswordPanel'
 import Notice from './Notice'
 
@@ -54,7 +55,8 @@ export default function FrontPage(p: FrontPageProps) {
   // 同一個時鐘驅動倒數面板與所有按鈕：跨過截止時間的那一秒，按鈕自動鎖定（不必重新整理）
   const nowMs = useNow()
   const nowDate = new Date(nowMs)
-  const windowOpen = canCancelOrEnroll(p.settings, nowDate)
+  // 各營隊報名時間可能不同：只要還有任何一個營隊開放中就算開放；全部都關了才跳「已截止」提示
+  const windowOpen = p.camps.length ? p.camps.some(c => canCancelOrEnroll(p.settings, nowDate, c)) : canCancelOrEnroll(p.settings, nowDate)
   const prevOpen = useRef(windowOpen)
   useEffect(() => {
     if (prevOpen.current && !windowOpen) {
@@ -78,7 +80,7 @@ export default function FrontPage(p: FrontPageProps) {
 
   return (
     <div className="grid gap-5">
-      <RegistrationCountdown settings={p.settings} nowMs={nowMs} />
+      <RegistrationCountdown settings={p.settings} nowMs={nowMs} camps={p.camps} />
       <GuideCard />
 
       <section className="relative overflow-hidden rounded-2xl border border-amber-200/80 bg-gradient-to-br from-orange-50 via-white to-amber-50 shadow-soft" aria-label={t('pass.title')}>
@@ -166,6 +168,8 @@ export default function FrontPage(p: FrontPageProps) {
             {p.camps.map(c => {
               const v = validateRegistration(stu, c, c.dates[0], p.regs, p.camps, { profile: profile ?? undefined, settings: p.settings, now: nowDate })
               const b = buttonState(v)
+              const campOpen = canCancelOrEnroll(p.settings, nowDate, c)   // 這個營隊自己的報名時間
+              const cw = campWindow(c, p.settings)
               const n = enrolledCount(c.id, p.regs)
               const w = waitlistOf(c.id, p.regs).length
               const tone = capacityTone(n, c.max_capacity)
@@ -181,6 +185,9 @@ export default function FrontPage(p: FrontPageProps) {
                   <h3 className="font-display text-base font-bold text-slate-800">{campLabel(c, locale)}</h3>
                   <p className="mt-1 text-sm text-slate-500">{c.dates.map(md).join('、')} · {c.start_time}-{c.end_time}{c.location ? ` · ${c.location}` : ''}</p>
                   {c.teacher && <p className="mt-0.5 text-xs text-slate-400">{t('camp.teacher', { t: c.teacher })}</p>}
+                  {(cw.startAt || cw.endAt) && (
+                    <p className="mt-0.5 text-xs text-slate-500">{locale === 'en' ? 'Registration' : '報名時間'}：{cw.startAt ? formatTaipei(cw.startAt) : '—'} ~ {cw.endAt ? formatTaipei(cw.endAt) : '—'}</p>
+                  )}
                   <div className="mt-3">
                     <div className="mb-1 flex justify-between text-xs">
                       <span className={`font-semibold ${tone.text}`}>{n} / {c.max_capacity}　{t(tone.key)}</span>
@@ -189,7 +196,7 @@ export default function FrontPage(p: FrontPageProps) {
                     <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${pct}%` }} /></div>
                   </div>
                   <div className="mt-auto pt-3">
-                    <button type="button" disabled={b.disabled || !windowOpen}
+                    <button type="button" disabled={b.disabled || !campOpen}
                       className={`w-full ${b.kind === 'waitlist' ? 'inline-flex items-center justify-center rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50' : 'btn-primary'}`}
                       onClick={async () => {
                         const result = await p.onEnroll(stu, c)

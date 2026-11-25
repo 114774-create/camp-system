@@ -82,6 +82,7 @@ function AppInner() {
         tab={tab}
         onTab={requestTab}
         settings={d.settings}
+        camps={d.camps}
         isAdminAuthenticated={isAdminAuthenticated}
         onAdminLogout={() => {
           writeAdminSession(false)
@@ -177,6 +178,7 @@ function AppInner() {
               onAutoAssign={d.autoAssign}
               onSetSubClass={d.setSubClass}
               onPromote={d.promoteWaitlist}
+              onAdminCancel={d.adminCancelOne}
             />)}
 
         {!showAdminGate && tab === 'students' && (

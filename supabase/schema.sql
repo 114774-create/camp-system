@@ -708,7 +708,8 @@ begin
   if new.status in ('enrolled', 'waitlisted') and (tg_op = 'INSERT' or old.status = 'cancelled') then
     select data into d from camp_camps where id = new.camp_id;
     if left(coalesce(new.snapshot_student_id, ''), 1) = '6'
-       and (coalesce(d->>'season', '') = 'summer' or coalesce(d->>'term', '') like '%夏令營%') then
+       and (coalesce(d->>'season', '') = 'summer'
+            or (coalesce(d->>'season', '') = '' and coalesce(d->>'term', '') like '%夏令營%')) then   -- 以 season 為準；檔期名稱只在舊資料沒有 season 時才參考
       raise exception 'GRADUATING_BLOCKED';
     end if;
   end if;

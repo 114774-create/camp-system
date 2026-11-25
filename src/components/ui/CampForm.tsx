@@ -6,6 +6,7 @@ import { useI18n } from '../../lib/I18nContext'
 import { buildCamps } from '../../lib/sessions'
 import { generatePin } from '../../lib/pin'
 import { md } from '../../lib/validate'
+import { fromDatetimeLocalValue, toDatetimeLocalValue } from '../../lib/time'
 
 export interface CampFormProps { initial: Camp | null; onSave: (camps: Camp[]) => void | Promise<void>; onCancel: () => void }
 
@@ -78,9 +79,12 @@ export default function CampForm({ initial, onSave, onCancel }: CampFormProps) {
       </div>
 
       <StepCard step={1} title={locale === 'en' ? 'Basics & schedule' : '基本資訊與日期時間'}>
-        <label className="grid gap-1.5 text-sm font-medium">{locale === 'en' ? 'Term' : '檔期名稱'}
-          <input className="input-field" value={c.term} onChange={e => set('term', e.target.value)} />
-        </label>
+        <div>
+          <label className="grid gap-1.5 text-sm font-medium">{locale === 'en' ? 'Term title (printed on reports)' : '檔期名稱（印在簽到表、通知單的標題）'}
+            <input className="input-field" value={c.term} onChange={e => set('term', e.target.value)} />
+          </label>
+          <Helper>{locale === 'en' ? 'Only used as the heading text on printed reports. It does not affect registration time or grade rules.' : '只用來當報表標題文字，不影響報名時間，也不影響年級限制。夏令營／假日營的判斷以下方「寒／暑」欄位為準。'}</Helper>
+        </div>
         <label className="grid gap-1.5 text-sm font-medium">{locale === 'en' ? 'Camp name (ZH)' : '營隊名稱'}
           <input className="input-field" value={c.name} onChange={e => set('name', e.target.value)} />
         </label>
@@ -165,7 +169,27 @@ export default function CampForm({ initial, onSave, onCancel }: CampFormProps) {
         </div>
       </StepCard>
 
-      <StepCard step={3} title={locale === 'en' ? 'Advanced rules' : '進階規則（分班、共容）'}>
+      <StepCard step={3} title={locale === 'en' ? 'Registration period (optional)' : '報名時間（選填）'}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1.5 text-sm font-medium">{locale === 'en' ? 'Opens (TST)' : '此營隊報名開放時間（台灣時間）'}
+            <input type="datetime-local" className="input-field" value={toDatetimeLocalValue(c.registration_start_at ?? '')}
+              onChange={e => set('registration_start_at', fromDatetimeLocalValue(e.target.value) || undefined)} />
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium">{locale === 'en' ? 'Closes (TST)' : '此營隊報名截止時間（台灣時間）'}
+            <input type="datetime-local" className="input-field" value={toDatetimeLocalValue(c.registration_end_at ?? '')}
+              onChange={e => set('registration_end_at', fromDatetimeLocalValue(e.target.value) || undefined)} />
+          </label>
+        </div>
+        <Helper>{locale === 'en' ? 'Leave blank to use the default times in System settings. Fill in to give this camp its own period (e.g. summer camp vs. holiday camp).' : '留空＝使用「系統設定」的預設報名時間；填寫＝這個營隊（單日擇一拆出的所有場次）使用自己的時間，例如夏令營與假日營開放日期不同。'}</Helper>
+        {(c.registration_start_at || c.registration_end_at) && (
+          <button type="button" className="btn-ghost justify-self-start !py-1.5 text-sm"
+            onClick={() => setC(p => ({ ...p, registration_start_at: undefined, registration_end_at: undefined }))}>
+            {locale === 'en' ? 'Clear (use default)' : '清除，改用系統預設時間'}
+          </button>
+        )}
+      </StepCard>
+
+      <StepCard step={4} title={locale === 'en' ? 'Advanced rules' : '進階規則（分班、共容）'}>
         <label className="flex items-start gap-3 rounded-xl border border-amber-100 bg-amber-50/40 px-3 py-3 text-sm">
           <input type="checkbox" className="mt-0.5 accent-orange-500" checked={c.ignore_time_conflict} onChange={e => set('ignore_time_conflict', e.target.checked)} />
           <span>{locale === 'en' ? 'Allow concurrent with overlapping camps' : '允許與同時段營隊同時參加'}</span>

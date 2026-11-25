@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowUpCircle, Copy, Hourglass, KeyRound, Layers, Pencil, Plus, Trash2, Users, Wand2 } from 'lucide-react'
+import { ArrowUpCircle, ChevronDown, ChevronUp, Copy, Hourglass, KeyRound, Layers, ListChecks, Pencil, Plus, Trash2, UserMinus, Users, Wand2 } from 'lucide-react'
 import { Camp, Registration, Student } from '../../types'
 import { campLabel, enrolledJoin } from '../../lib/report'
 import { useI18n } from '../../lib/I18nContext'
@@ -15,6 +15,8 @@ export interface CampListProps {
   onAutoAssign: (campId: string) => void; onSetSubClass: (regId: string, sc: string) => void
   /** 候補遞補轉正（後台手動） */
   onPromote: (regId: string) => Promise<VResult>
+  /** 後台：把單一學生移出名單（正取或候補；保留紀錄，學生之後可重新報名） */
+  onAdminCancel?: (regId: string) => Promise<VResult>
   /** 一鍵複製（帶入設定、清空上課日期，開啟新增模式） */
   onDuplicate: (c: Camp) => void
   /** camp_id → 教師點名 PIN */
@@ -31,6 +33,18 @@ export default function CampList(p: CampListProps) {
   const { t, locale } = useI18n()
   const [wmsg, setWmsg] = useState(''), [wok, setWok] = useState(false)
   const [copied, setCopied] = useState('')
+  const [openRoster, setOpenRoster] = useState<Record<string, boolean>>({})
+  /** 移出名單：二次確認 → 取消該筆報名 → 提示是否可遞補候補 */
+  const removeFromCamp = async (regId: string, who: string, c: Camp, waitCount: number, wasEnrolled: boolean) => {
+    if (!p.onAdminCancel) return
+    const name = campLabel(c, locale)
+    if (!confirm(locale === 'en' ? `Remove ${who} from 「${name}」?` : `確定把「${who}」移出「${name}」？\n（會保留紀錄，學生之後可以重新報名）`)) return
+    const v = await p.onAdminCancel(regId)
+    setWok(v.ok)
+    setWmsg(v.ok
+      ? (locale === 'en' ? `Removed ${who}.` : `已將「${who}」移出名單。`) + (wasEnrolled && waitCount > 0 ? (locale === 'en' ? ` ${waitCount} on the waitlist — use Promote to fill the seat.` : ` 候補名單還有 ${waitCount} 人，可按「遞補轉正」補位。`) : '')
+      : v.message)
+  }
   const copyLink = (id: string) => { navigator.clipboard?.writeText(teacherLink(id)).then(() => { setCopied(id); setTimeout(() => setCopied(''), 1500) }) }
   return (
     <div className="grid gap-4">
@@ -96,6 +110,47 @@ export default function CampList(p: CampListProps) {
                   <div className={`h-full rounded-full ${capacityTone(list.length, c.max_capacity)}`} style={{ width: `${pct}%` }} />
                 </div>
               </div>
+              {p.onAdminCancel && (
+                <div className="mt-3">
+                  <button type="button" aria-expanded={!!openRoster[c.id]}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    onClick={() => setOpenRoster(o => ({ ...o, [c.id]: !o[c.id] }))}>
+                    <ListChecks className="h-4 w-4" aria-hidden />
+                    {locale === 'en' ? `Roster (${list.length})` : `名單管理（正取 ${list.length}）`}
+                    {openRoster[c.id] ? <ChevronUp className="h-4 w-4" aria-hidden /> : <ChevronDown className="h-4 w-4" aria-hidden />}
+                  </button>
+                  {openRoster[c.id] && (
+                    <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+                      {list.length === 0 ? (
+                        <p className="text-sm text-slate-500">{locale === 'en' ? 'No one is enrolled yet.' : '目前還沒有人報名。'}</p>
+                      ) : (
+                        <ol className="grid gap-2">
+                          {list.map(({ r, s }, i) => {
+                            const who = s.classCode && s.no ? `${s.classCode}-${s.no} ${s.name}` : s.name
+                            const sc = c.sub_classes.find(x => x.id === r.assigned_sub_class)
+                            return (
+                              <li key={r.id} className="flex flex-col gap-2 rounded-xl border border-white bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                                <span className="text-sm font-medium">
+                                  <span className="mr-2 text-xs text-slate-400">{i + 1}.</span>{who}
+                                  {sc && <span className="ml-2 badge-pill bg-sky-100 text-sky-700">{sc.name}</span>}
+                                  {(r.leave_dates?.length ?? 0) > 0 && <span className="ml-2 badge-pill bg-rose-100 text-rose-700">{locale === 'en' ? 'Leave' : '請假'} {r.leave_dates!.length}</span>}
+                                  <span className="ml-2 text-xs text-slate-400">{new Date(r.created_at).toLocaleString(locale === 'en' ? 'en-US' : 'zh-TW', { hour12: false })}</span>
+                                </span>
+                                <button type="button" aria-label={`${locale === 'en' ? 'Remove' : '移出名單'} ${who}`}
+                                  className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-600"
+                                  onClick={() => removeFromCamp(r.id, who, c, wait.length, true)}>
+                                  <UserMinus className="h-4 w-4" aria-hidden />{locale === 'en' ? 'Remove' : '移出名單'}
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ol>
+                      )}
+                      <p className="mt-2 text-xs text-slate-500">{locale === 'en' ? 'Waitlist (with Promote / Remove) is shown below when someone is waiting.' : '候補名單（可遞補轉正或移除）在有人候補時會顯示在下方。'}</p>
+                    </div>
+                  )}
+                </div>
+              )}
               {c.has_sub_classes && (
                 <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50/50 p-3">
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -126,11 +181,20 @@ export default function CampList(p: CampListProps) {
                       return (
                         <li key={r.id} className="flex flex-col gap-2 rounded-xl border border-white bg-white/90 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
                           <span className="text-sm font-medium">#{i + 1}　{s ? `${s.classCode}-${s.no} ${s.name}` : r.student_name}<span className="ml-2 text-xs text-slate-400">{new Date(r.created_at).toLocaleString(locale === 'en' ? 'en-US' : 'zh-TW', { hour12: false })}</span></span>
+                          <div className="flex flex-wrap gap-2">
                           <button type="button" disabled={!seatOpen} title={!seatOpen ? t('admin.noSeat') : undefined}
                             className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
                             onClick={async () => { const v = await p.onPromote(r.id); setWok(v.ok); setWmsg(v.ok ? t('admin.promoted') : v.message) }}>
                             <ArrowUpCircle className="h-4 w-4" aria-hidden />{t('admin.promote')}
                           </button>
+                          {p.onAdminCancel && (
+                            <button type="button" aria-label={`${locale === 'en' ? 'Remove' : '移出候補'} ${s ? s.name : r.student_name}`}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-600"
+                              onClick={() => removeFromCamp(r.id, s ? `${s.classCode}-${s.no} ${s.name}` : r.student_name, c, wait.length, false)}>
+                              <UserMinus className="h-4 w-4" aria-hidden />{locale === 'en' ? 'Remove' : '移出候補'}
+                            </button>
+                          )}
+                          </div>
                         </li>
                       )
                     })}

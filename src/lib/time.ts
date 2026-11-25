@@ -57,6 +57,41 @@ export function registrationWindowStatus(startAt?: string, endAt?: string, now: 
   return { status: 'open', endAt: e !== null ? endAt! : '' }
 }
 
+/** 某營隊實際適用的報名時間：營隊自己有設定就用自己的，留空的那一端沿用系統預設 */
+export function campWindow(
+  camp: { registration_start_at?: string; registration_end_at?: string } | null | undefined,
+  settings: { registration_start_at?: string; registration_end_at?: string } | null | undefined,
+): { startAt: string; endAt: string } {
+  return {
+    startAt: camp?.registration_start_at || settings?.registration_start_at || '',
+    endAt: camp?.registration_end_at || settings?.registration_end_at || '',
+  }
+}
+export const campWindowStatus = (
+  camp: Parameters<typeof campWindow>[0], settings: Parameters<typeof campWindow>[1], now: Date | number = new Date(),
+): RegWindowStatus => { const w = campWindow(camp, settings); return registrationWindowStatus(w.startAt, w.endAt, now) }
+
+/**
+ * 全站橫幅／倒數用的「代表時間窗」（各營隊時間可能不同）：
+ * 有營隊開放中 → 顯示最快截止的那一個；否則有尚未開放的 → 最早開放的；否則全部已截止 → after；都沒設定 → unset。
+ * 沒有任何營隊個別設定時，結果與舊版（只看系統預設）完全相同。
+ */
+export function aggregateWindowStatus(
+  camps: Parameters<typeof campWindow>[0][], settings: Parameters<typeof campWindow>[1], now: Date | number = new Date(),
+): RegWindowStatus {
+  if (!camps.length) return registrationWindowStatus(settings?.registration_start_at, settings?.registration_end_at, now)
+  const all = camps.map(c => campWindowStatus(c, settings, now))
+  const opens = all.filter((w): w is Extract<RegWindowStatus, { status: 'open' }> => w.status === 'open')
+  const ms = (x: string) => parseTaipeiMs(x) ?? Infinity
+  const withEnd = opens.filter(w => w.endAt).sort((x, y) => ms(x.endAt) - ms(y.endAt))
+  if (withEnd.length) return withEnd[0]
+  if (opens.length || all.some(w => w.status === 'unset')) return opens[0] ?? { status: 'unset' }
+  const befores = all.filter((w): w is Extract<RegWindowStatus, { status: 'before' }> => w.status === 'before')
+  if (befores.length) return befores.sort((a, b) => ms(a.startAt) - ms(b.startAt))[0]
+  const afters = all.filter((w): w is Extract<RegWindowStatus, { status: 'after' }> => w.status === 'after')
+  return afters.sort((a, b) => ms(b.endAt) - ms(a.endAt))[0] ?? { status: 'unset' }
+}
+
 export interface DurationParts { days: number; hours: number; minutes: number; seconds: number }
 /** 毫秒 → 天／小時／分／秒（向上取整到秒：還剩 0.4 秒仍顯示 1 秒，歸零才算結束） */
 export function splitDuration(ms: number): DurationParts {

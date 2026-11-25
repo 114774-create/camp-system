@@ -1,8 +1,8 @@
 import { ReactNode } from 'react'
 import { Compass, Globe2, Lock, LogOut, Printer, Settings2, Sun, Tent, Ticket, UserRound, Users } from 'lucide-react'
-import { Tab } from '../../types'
+import { Camp, Tab } from '../../types'
 import { useI18n } from '../../lib/I18nContext'
-import { formatTaipei, registrationWindowStatus } from '../../lib/time'
+import { aggregateWindowStatus, formatTaipei } from '../../lib/time'
 import { useNow } from '../../hooks/useCountdown'
 import { PublicSettings } from '../../types'
 
@@ -10,12 +10,14 @@ const STUDENT_TABS: Tab[] = ['front', 'status', 'profile']
 const ADMIN_TABS: Tab[] = ['camps', 'students', 'settings', 'r1', 'r2', 'r3']
 
 export default function AppShell({
-  tab, onTab, children, settings, isAdminAuthenticated, onAdminLogout, studentLoggedIn,
+  tab, onTab, children, settings, camps, isAdminAuthenticated, onAdminLogout, studentLoggedIn,
 }: {
   tab: Tab
   onTab: (t: Tab) => void
   children: ReactNode
   settings?: PublicSettings | null
+  /** 各營隊可有自己的報名時間；橫幅顯示最具代表性的那一個（沒傳＝只看系統預設） */
+  camps?: Camp[]
   isAdminAuthenticated: boolean
   onAdminLogout: () => void
   studentLoggedIn: boolean
@@ -23,7 +25,7 @@ export default function AppShell({
   const { t, locale, setLocale } = useI18n()
   const isReport = tab === 'r1' || tab === 'r2' || tab === 'r3'
   const nowMs = useNow()
-  const win = registrationWindowStatus(settings?.registration_start_at, settings?.registration_end_at, nowMs)
+  const win = aggregateWindowStatus(camps ?? [], settings, nowMs)
 
   const go = (next: Tab) => onTab(next)
 

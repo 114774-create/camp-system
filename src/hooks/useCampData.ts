@@ -175,10 +175,10 @@ export function useCampData() {
   }
 
   const cancel = async (id: string): Promise<VResult> => {
-    if (!canCancelOrEnroll(settings)) {
+    const r = regs.find(x => x.id === id)
+    if (!canCancelOrEnroll(settings, undefined, r ? camps.find(c => c.id === r.camp_id) : null)) {
       return { ok: false, code: 'WINDOW', message: '報名已截止' }
     }
-    const r = regs.find(x => x.id === id)
     if (!r || r.status === 'cancelled') return { ok: false, code: 'DUP', message: '找不到報名紀錄' }
     const n = { ...r, status: 'cancelled' as const, cancelled_at: new Date().toISOString() }
     await repo.upsertRegs([n])
@@ -281,6 +281,17 @@ export function useCampData() {
     setRegs(p => p.map(x => next.find(n => n.id === x.id) ?? x))
   }
 
+  /** 後台：把單一學生移出某營隊的名單（正取或候補皆可）。保留紀錄與取消時間，學生之後可以重新報名 */
+  const adminCancelOne = async (regId: string): Promise<VResult> => {
+    const r = regs.find(x => x.id === regId)
+    if (!r || r.status === 'cancelled') return { ok: false, code: 'DUP', message: '找不到報名紀錄（可能已被移除）' }
+    const n = { ...r, status: 'cancelled' as const, cancelled_at: new Date().toISOString() }
+    try { await repo.upsertRegs([n]) }
+    catch { await reloadPublic(); return { ok: false, code: 'LOCKED', message: '移出失敗，已重新載入資料，請再試一次' } }
+    setRegs(p => p.map(x => x.id === regId ? n : x))
+    return { ok: true }
+  }
+
   /** 手足綁定：以姓名驗證兩個帳號；B 尚無聯絡人時由伺服器複製 A 的聯絡人 */
   const addSibling = async (a: { id: string; password: string }, b: { id: string; password: string }): Promise<BindSiblingResult> => {
     const na = keyOfId(a.id), nb = keyOfId(b.id)
@@ -312,7 +323,7 @@ export function useCampData() {
     students, camps, regs, profiles, settings, loading,
     getProfile, loginStudent, changeStudentPassword, saveEmergencyContacts,
     verifyAdmin, unlockStudent, resetStudentPassword, adminSaveContacts,
-    enroll, cancel, promoteWaitlist, adminCancelRegistrations, keepOnlyProfile, addSibling, resetPasswordByPhone, teacherPins, duplicateNames, requestLeave, setSubClass, autoAssign: runAutoAssign,
+    enroll, cancel, promoteWaitlist, adminCancelOne, adminCancelRegistrations, keepOnlyProfile, addSibling, resetPasswordByPhone, teacherPins, duplicateNames, requestLeave, setSubClass, autoAssign: runAutoAssign,
     saveCamp, deleteCamp, saveSettings, reloadPublic, clearStudentPii, refreshAdminProfiles,
   }
 }

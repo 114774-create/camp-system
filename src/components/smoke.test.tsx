@@ -45,6 +45,12 @@ describe('render smoke', () => {
     const html = wrap(<ProfilePage student={s1} profile={emptyProfileView('10101')} sessionPassword="" onSaveContacts={async () => ({ success: false, remaining_attempts: 5, is_locked: false, message: '' })} onChangePassword={async () => ({ success: false, remaining_attempts: 5, is_locked: false, message: '' })} />)
     expect(html).toContain('目前密碼'); expect(html).toContain('緊急聯絡人')
   })
+  it('後台：名單管理按鈕與「移出名單」（有 onAdminCancel 才出現）', () => {
+    const base = { students: [s1, s2], camps: [camp], regs, onNew: () => {}, onEdit: () => {}, onDelete: () => {}, onAutoAssign: () => {}, onSetSubClass: () => {}, onPromote: noop, onDuplicate: () => {}, teacherPins: {} }
+    expect(wrap(<CampList {...base} />)).not.toContain('名單管理')
+    const html = wrap(<CampList {...base} onAdminCancel={noop} />)
+    expect(html).toContain('名單管理'); expect(html).toContain('移出候補')
+  })
   it('後台：候補名單與「遞補轉正」按鈕（滿額時停用）', () => {
     const html = wrap(<CampList students={[s1, s2]} camps={[camp]} regs={regs} onNew={() => {}} onEdit={() => {}} onDelete={() => {}} onAutoAssign={() => {}} onSetSubClass={() => {}} onPromote={noop} onDuplicate={() => {}} teacherPins={{}} />)
     expect(html).toContain('候補名單'); expect(html).toContain('遞補轉正'); expect(html).toContain('disabled')

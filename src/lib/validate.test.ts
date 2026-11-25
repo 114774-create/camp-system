@@ -92,8 +92,8 @@ describe('夏令營六年級阻擋', () => {
     expect(code(r)).toBe('GRADUATE'); expect((r as any).message).toBe(GRADUATE_MESSAGE)
     expect(GRADUATE_MESSAGE).toContain('六年級畢業生無法報名夏令營')
   })
-  it('檔期名稱含「夏令營」也算（即使 season 不是 summer）', () => {
-    expect(code(run(6, { season: 'holiday', term: '115學年度夏令營' }))).toBe('GRADUATE')
+  it('以營隊類型為準：假日營的檔期名稱即使含「夏令營」也不擋六年級', () => {
+    expect(code(run(6, { season: 'holiday', term: '115學年度夏令營' }))).toBe('OK')
   })
   it('其他年級、以及寒令營／假日營的 6 年級不受影響', () => {
     expect(code(run(5, { season: 'summer' }))).toBe('OK')
