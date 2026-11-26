@@ -1,4 +1,4 @@
-import { AttendanceMark, AttendStatus, RosterEntry, Student } from '../types'
+import { AttendanceMark, AttendStatus, Registration, RosterEntry, Student } from '../types'
 import { studentIndex } from './name'
 import { snapshotStudent } from './report'
 
@@ -40,3 +40,10 @@ export function applyMark(marks: AttendanceMark[], studentName: string, date: st
   const rest = marks.filter(m => !(m.student_name === studentName && m.date === date))
   return status ? [...rest, { student_name: studentName, date, status }] : rest
 }
+
+/** 後台用：把某營隊的正取報名轉成點名名單（與老師點名頁看到的名單一致） */
+export const rosterFromRegs = (regs: Registration[], campId: string): RosterEntry[] =>
+  regs.filter(r => r.camp_id === campId && r.status === 'enrolled').map(r => ({
+    student_name: r.student_name, snapshot_student_id: r.snapshot_student_id,
+    assigned_sub_class: r.assigned_sub_class, leave_dates: r.leave_dates ?? [],
+  }))

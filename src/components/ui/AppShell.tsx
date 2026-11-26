@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import { Compass, Globe2, Lock, LogOut, Printer, Settings2, Sun, Tent, Ticket, UserRound, Users } from 'lucide-react'
+import { ClipboardCheck, Compass, Globe2, Lock, LogOut, Printer, Settings2, Sun, Tent, Ticket, UserRound, Users } from 'lucide-react'
 import { Camp, Tab } from '../../types'
 import { useI18n } from '../../lib/I18nContext'
 import { aggregateWindowStatus, formatTaipei } from '../../lib/time'
@@ -7,7 +7,7 @@ import { useNow } from '../../hooks/useCountdown'
 import { PublicSettings } from '../../types'
 
 const STUDENT_TABS: Tab[] = ['front', 'status', 'profile']
-const ADMIN_TABS: Tab[] = ['camps', 'students', 'settings', 'r1', 'r2', 'r3']
+const ADMIN_TABS: Tab[] = ['camps', 'students', 'settings', 'attendance', 'r1', 'r2', 'r3']
 
 export default function AppShell({
   tab, onTab, children, settings, camps, isAdminAuthenticated, onAdminLogout, studentLoggedIn,
@@ -136,6 +136,10 @@ export default function AppShell({
               <button type="button" onClick={() => go('students')} className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-semibold sm:text-sm ${tab === 'students' ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-sky-50'}`}>
                 <Users className="h-4 w-4" aria-hidden />
                 {t('nav.students')}
+              </button>
+              <button type="button" onClick={() => go('attendance')} className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-semibold sm:text-sm ${tab === 'attendance' ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-sky-50'}`}>
+                <ClipboardCheck className="h-4 w-4" aria-hidden />
+                {t('nav.attendance')}
               </button>
               <button type="button" onClick={() => go('settings')} className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-2 text-xs font-semibold sm:text-sm ${tab === 'settings' ? 'bg-sky-600 text-white' : 'text-slate-600 hover:bg-sky-50'}`}>
                 <Settings2 className="h-4 w-4" aria-hidden />

@@ -719,6 +719,19 @@ drop trigger if exists trg_camp_block_graduating on camp_registrations;
 create trigger trg_camp_block_graduating before insert or update on camp_registrations
   for each row execute function camp_block_graduating();
 
+-- 後台：讀取全部營隊的點名紀錄（需管理員密碼；camp_attendance 資料表本身仍然鎖住，不對外開放）
+create or replace function camp_admin_get_attendance(p_admin_password text)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+begin
+  perform camp_assert_admin(p_admin_password);
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'camp_id', camp_id, 'student_name', student_name,
+      'date', to_char(attend_date, 'YYYY-MM-DD'), 'status', status))
+    from camp_attendance), '[]'::jsonb);
+end $$;
+grant execute on function camp_admin_get_attendance(text) to anon, authenticated;
+
 -- ═══ v6 遷移（與 supabase/migrations/001、002 相同；可重複執行）═══
 -- 001：預設密碼自動跟著「目前學號」走（升年級 10101 → 20101 免重設）
 -- 前置條件：已執行過 v5 的 schema（存在 camp_roster、camp_password_matches）。可重複執行。

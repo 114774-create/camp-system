@@ -281,6 +281,9 @@ export function useCampData() {
     setRegs(p => p.map(x => next.find(n => n.id === x.id) ?? x))
   }
 
+  /** 後台：讀取老師的點名紀錄 */
+  const loadAttendance = () => repo.adminGetAttendance(requireAdminPassword())
+
   /** 後台：把單一學生移出某營隊的名單（正取或候補皆可）。保留紀錄與取消時間，學生之後可以重新報名 */
   const adminCancelOne = async (regId: string): Promise<VResult> => {
     const r = regs.find(x => x.id === regId)
@@ -323,7 +326,7 @@ export function useCampData() {
     students, camps, regs, profiles, settings, loading,
     getProfile, loginStudent, changeStudentPassword, saveEmergencyContacts,
     verifyAdmin, unlockStudent, resetStudentPassword, adminSaveContacts,
-    enroll, cancel, promoteWaitlist, adminCancelOne, adminCancelRegistrations, keepOnlyProfile, addSibling, resetPasswordByPhone, teacherPins, duplicateNames, requestLeave, setSubClass, autoAssign: runAutoAssign,
+    enroll, cancel, promoteWaitlist, loadAttendance, adminCancelOne, adminCancelRegistrations, keepOnlyProfile, addSibling, resetPasswordByPhone, teacherPins, duplicateNames, requestLeave, setSubClass, autoAssign: runAutoAssign,
     saveCamp, deleteCamp, saveSettings, reloadPublic, clearStudentPii, refreshAdminProfiles,
   }
 }

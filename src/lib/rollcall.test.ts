@@ -49,3 +49,17 @@ describe('路由與手足工作階段', () => {
     expect(nextActiveName([], '李小華', '李小華')).toBeNull()
   })
 })
+
+import { rosterFromRegs as _rfr } from './rollcall'
+describe('rosterFromRegs（後台點名結果）', () => {
+  it('只帶正取、保留請假與分班', () => {
+    const regs: any[] = [
+      { id: '1', student_name: 'A', camp_id: 'c', status: 'enrolled', snapshot_student_id: '30101', leave_dates: ['2026-12-05'], created_at: '' },
+      { id: '2', student_name: 'B', camp_id: 'c', status: 'waitlisted', created_at: '' },
+      { id: '3', student_name: 'C', camp_id: 'd', status: 'enrolled', created_at: '' },
+    ]
+    const r = _rfr(regs, 'c')
+    expect(r).toHaveLength(1)
+    expect(r[0]).toMatchObject({ student_name: 'A', leave_dates: ['2026-12-05'] })
+  })
+})

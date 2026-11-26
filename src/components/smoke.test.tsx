@@ -7,6 +7,7 @@ import FrontPage from './ui/FrontPage'
 import StatusPage from './ui/StatusPage'
 import ProfilePage from './ui/ProfilePage'
 import CampList from './ui/CampList'
+import AttendanceResults from './ui/AttendanceResults'
 import AppShell from './ui/AppShell'
 import CampForm from './ui/CampForm'
 import ContactsPage from './ui/ContactsPage'
@@ -44,6 +45,10 @@ describe('render smoke', () => {
   it('聯絡人資料與設定：聯絡人與密碼在同一頁', () => {
     const html = wrap(<ProfilePage student={s1} profile={emptyProfileView('10101')} sessionPassword="" onSaveContacts={async () => ({ success: false, remaining_attempts: 5, is_locked: false, message: '' })} onChangePassword={async () => ({ success: false, remaining_attempts: 5, is_locked: false, message: '' })} />)
     expect(html).toContain('目前密碼'); expect(html).toContain('緊急聯絡人')
+  })
+  it('後台：點名結果頁可渲染（缺席名單區塊與重新整理）', () => {
+    const html = wrap(<AttendanceResults students={[s1, s2]} camps={[camp]} regs={regs} profiles={[]} onLoad={async () => []} />)
+    expect(html).toContain('點名結果'); expect(html).toContain('缺席名單'); expect(html).toContain('重新整理')
   })
   it('後台：名單管理按鈕與「移出名單」（有 onAdminCancel 才出現）', () => {
     const base = { students: [s1, s2], camps: [camp], regs, onNew: () => {}, onEdit: () => {}, onDelete: () => {}, onAutoAssign: () => {}, onSetSubClass: () => {}, onPromote: noop, onDuplicate: () => {}, teacherPins: {} }

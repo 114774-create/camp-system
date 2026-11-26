@@ -10,6 +10,7 @@ const dict = {
   'nav.camps': { 'zh-TW': '營隊與分班管理', en: 'Camps & Classes' },
   'nav.students': { 'zh-TW': '全校學生管理', en: 'All Students' },
   'nav.settings': { 'zh-TW': '系統設定', en: 'Settings' },
+  'nav.attendance': { 'zh-TW': '點名結果', en: 'Roll Call Results' },
   'nav.r1': { 'zh-TW': '班級簽到表', en: 'Class Attendance' },
   'nav.r2': { 'zh-TW': '總簽到表', en: 'Master Attendance' },
   'nav.r3': { 'zh-TW': '報名通知單', en: 'Enrollment Notice' },

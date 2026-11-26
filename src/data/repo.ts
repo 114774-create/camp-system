@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import {
-  AttendStatus, BindSiblingResult, Camp, EmergencyContact, PublicSettings, Registration, ResetPasswordResult,
+  AttendanceRecord, AttendStatus, BindSiblingResult, Camp, EmergencyContact, PublicSettings, Registration, ResetPasswordResult,
   RosterSyncResult, StudentLoginResult, StudentProfileView, TeacherRosterResult,
 } from '../types'
 import { generatePin, isValidPin } from '../lib/pin'
@@ -52,6 +52,8 @@ export interface Repo {
   adminDeleteCamp(adminPassword: string, campId: string): Promise<void>
   /** 候補遞補轉正：伺服器端檢查名額，已滿拋出 CAMP_FULL */
   adminPromoteWaitlist(adminPassword: string, regId: string): Promise<void>
+  /** 後台：讀取全部點名紀錄（老師點名後，管理員在「點名結果」查看缺席） */
+  adminGetAttendance(adminPassword: string): Promise<AttendanceRecord[]>
 
   /** 忘記密碼：學號 + 主要緊急聯絡人電話 */
   /** newPassword 為 null＝重設回預設密碼（目前學號，has_custom_password=false）；有值＝家長自訂新密碼（true） */
@@ -362,6 +364,11 @@ const localRepo: Repo = {
     saveLs('camp_attendance_by_name', ls<LocalMark[]>('camp_attendance_by_name', []).filter(m => m.camp_id !== campId))
   },
 
+  async adminGetAttendance(adminPassword) {
+    await localAssertAdmin(adminPassword)
+    return ls<LocalMark[]>('camp_attendance_by_name', []).map(m => ({ camp_id: m.camp_id, student_name: m.student_name, date: m.date, status: m.status }))
+  },
+
   async adminPromoteWaitlist(adminPassword, regId) {
     await localAssertAdmin(adminPassword)
     const regs = ls<Registration[]>('camp_regs_by_name', [])
@@ -626,6 +633,12 @@ function createSupaRepo(sb: SupabaseClient): Repo {
         p_camp_id: campId,
       })
       if (error) rpcError(error)
+    },
+
+    async adminGetAttendance(adminPassword) {
+      const { data, error } = await sb.rpc('camp_admin_get_attendance', { p_admin_password: adminPassword })
+      if (error) rpcError(error)
+      return (data ?? []) as AttendanceRecord[]
     },
 
     async adminPromoteWaitlist(adminPassword, regId) {

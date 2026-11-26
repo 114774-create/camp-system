@@ -20,11 +20,12 @@ import StudentAdmin from './components/ui/StudentAdmin'
 import SettingsForm from './components/ui/SettingsForm'
 import AdminGate from './components/ui/AdminGate'
 import R1Attendance from './components/reports/R1Attendance'
+import AttendanceResults from './components/ui/AttendanceResults'
 import R2Master from './components/reports/R2Master'
 import R3Notice from './components/reports/R3Notice'
 import TeacherRollCall from './components/teacher/TeacherRollCall'
 
-const ADMIN_TABS: Tab[] = ['camps', 'students', 'settings', 'r1', 'r2', 'r3']
+const ADMIN_TABS: Tab[] = ['camps', 'students', 'settings', 'attendance', 'r1', 'r2', 'r3']
 const STUDENT_TABS: Tab[] = ['front', 'status', 'profile']
 
 function AppInner() {
@@ -198,6 +199,8 @@ function AppInner() {
         {!showAdminGate && tab === 'settings' && d.settings && (
           <SettingsForm settings={d.settings} onSave={d.saveSettings} />
         )}
+
+        {!showAdminGate && tab === 'attendance' && <AttendanceResults {...rp} onLoad={d.loadAttendance} />}
 
         {!showAdminGate && tab === 'r1' && <R1Attendance {...rp} />}
         {!showAdminGate && tab === 'r2' && <R2Master {...rp} />}

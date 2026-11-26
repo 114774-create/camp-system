@@ -96,7 +96,7 @@ export interface PublicSettings {
 export type SystemSettings = PublicSettings
 
 export type Locale = 'zh-TW' | 'en'
-export type Tab = 'front' | 'profile' | 'status' | 'camps' | 'students' | 'settings' | 'r1' | 'r2' | 'r3'
+export type Tab = 'front' | 'profile' | 'status' | 'camps' | 'students' | 'settings' | 'attendance' | 'r1' | 'r2' | 'r3'
 
 export type StudentLoginResult =
   | { success: true; emergency_contacts: EmergencyContact[]; is_locked: false; remaining_attempts: number }
@@ -105,6 +105,8 @@ export type StudentLoginResult =
 // ─── 點名簿／手足／密碼重設 ───
 export type AttendStatus = 'present' | 'absent'
 export interface AttendanceMark { student_name: string; date: string; status: AttendStatus }
+/** 後台讀取的點名紀錄（跨營隊，所以多一個 camp_id） */
+export interface AttendanceRecord extends AttendanceMark { camp_id: string }
 export interface RosterEntry { student_name: string; snapshot_student_id?: string; assigned_sub_class?: string; leave_dates: string[] }
 export type TeacherRosterResult =
   | { success: true; camp: Camp; roster: RosterEntry[]; marks: AttendanceMark[] }
